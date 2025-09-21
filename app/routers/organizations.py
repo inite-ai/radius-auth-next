@@ -1,23 +1,28 @@
 """Organization management routes."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_active_user
 from app.dependencies.database import get_db
-from app.models.membership import Membership, Role
-from app.models.organization import Organization
+from app.models.membership import Role
 from app.models.user import User
 from app.policies.base_policy import Action
 from app.policies.guards import require
 from app.schemas.organization import (
+    MemberListResponse,
+    MembershipResponse,
     OrganizationCreate,
     OrganizationDetailResponse,
     OrganizationListResponse,
     OrganizationResponse,
+    OrganizationUpdate,
+    OrganizationUpdateResponse,
     OrganizationWithRole,
 )
+from app.schemas.user import UserResponse
+from app.services.organization_service import OrganizationService
+from app.utils.exceptions import NotFoundError, ValidationError
 
 router = APIRouter()
 
@@ -31,36 +36,27 @@ async def get_organizations(
 ):
     """Get organizations user has access to."""
 
-    # Get user's organizations through memberships
-    result = await db.execute(
-        select(Organization, Membership)
-        .join(Membership, Organization.id == Membership.organization_id)
-        .where(
-            Membership.user_id == current_user.id,
-            Membership.is_active,
-            Organization.is_active,
-        )
-        .offset((page - 1) * per_page)
-        .limit(per_page)
+    org_service = OrganizationService(db)
+    org_memberships, total = await org_service.get_user_organizations(
+        user_id=current_user.id,
+        page=page,
+        per_page=per_page,
     )
 
-    org_memberships = result.all()
-
-    organizations_with_roles = []
-    for org, membership in org_memberships:
-        organizations_with_roles.append(
-            OrganizationWithRole(
-                organization=org,
-                role=membership.role,
-                joined_at=membership.created_at,
-            )
+    organizations_with_roles = [
+        OrganizationWithRole(
+            organization=org,
+            role=membership.role,
+            joined_at=membership.created_at,
         )
+        for org, membership in org_memberships
+    ]
 
     return OrganizationListResponse(
         success=True,
         message="Organizations retrieved successfully",
         organizations=organizations_with_roles,
-        total=len(organizations_with_roles),
+        total=total,
     )
 
 
@@ -72,43 +68,33 @@ async def create_organization(
 ):
     """Create new organization."""
 
-    # Check if slug is already taken
-    result = await db.execute(select(Organization).where(Organization.slug == org_create.slug))
-    existing_org = result.scalar_one_or_none()
+    org_service = OrganizationService(db)
 
-    if existing_org:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Organization slug already exists",
+    try:
+        organization = await org_service.create_organization(
+            name=org_create.name,
+            slug=org_create.slug,
+            user_id=current_user.id,
+            description=org_create.description,
+            website=org_create.website,
+            email=org_create.email,
+            phone=org_create.phone,
         )
 
-    # Create organization
-    organization = Organization(**org_create.dict())
-
-    db.add(organization)
-    await db.flush()  # Get the ID
-
-    # Create owner membership for current user
-    membership = Membership(
-        user_id=current_user.id,
-        organization_id=organization.id,
-        role=Role.OWNER,
-        is_active=True,
-    )
-
-    db.add(membership)
-    await db.commit()
-    await db.refresh(organization)
-
-    return OrganizationDetailResponse(
-        success=True,
-        message="Organization created successfully",
-        organization=OrganizationResponse.model_validate(organization),
-        user_role=Role.OWNER,
-    )
+        return OrganizationDetailResponse(
+            success=True,
+            message="Organization created successfully",
+            organization=OrganizationResponse.model_validate(organization),
+            user_role=Role.OWNER,
+        )
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )
 
 
-@router.get("/{organization_id}")
+@router.get("/{organization_id}", response_model=OrganizationDetailResponse)
 async def get_organization(
     organization_id: int,
     current_user: User = Depends(get_current_active_user),
@@ -125,64 +111,32 @@ async def get_organization(
         organization_id=organization_id,
     )
 
-    # Get organization
-    result = await db.execute(
-        select(Organization).where(
-            Organization.id == organization_id,
-            Organization.is_active,
-        )
-    )
-    organization = result.scalar_one_or_none()
+    org_service = OrganizationService(db)
 
+    organization = await org_service.get_organization_by_id(organization_id)
     if not organization:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Organization not found",
         )
 
-    # Get user's role in organization
-    membership_result = await db.execute(
-        select(Membership).where(
-            Membership.user_id == current_user.id,
-            Membership.organization_id == organization_id,
-            Membership.is_active,
-        )
+    user_role = await org_service.get_user_role_in_organization(
+        user_id=current_user.id,
+        organization_id=organization_id,
     )
-    membership = membership_result.scalar_one_or_none()
 
-    return {
-        "success": True,
-        "organization": {
-            "id": organization.id,
-            "name": organization.name,
-            "slug": organization.slug,
-            "description": organization.description,
-            "is_personal": organization.is_personal,
-            "website": organization.website,
-            "email": organization.email,
-            "phone": organization.phone,
-            "logo_url": organization.logo_url,
-            "primary_color": organization.primary_color,
-            "plan": organization.plan,
-            "max_users": organization.max_users,
-            "user_count": organization.user_count,
-            "role": membership.role if membership else None,
-            "created_at": organization.created_at,
-            "updated_at": organization.updated_at,
-        },
-    }
+    return OrganizationDetailResponse(
+        success=True,
+        message="Organization retrieved successfully",
+        organization=OrganizationResponse.model_validate(organization),
+        user_role=user_role,
+    )
 
 
-@router.put("/{organization_id}")
+@router.put("/{organization_id}", response_model=OrganizationUpdateResponse)
 async def update_organization(
     organization_id: int,
-    name: str | None = None,
-    description: str | None = None,
-    website: str | None = None,
-    email: str | None = None,
-    phone: str | None = None,
-    logo_url: str | None = None,
-    primary_color: str | None = None,
+    org_update: OrganizationUpdate,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -197,53 +151,38 @@ async def update_organization(
         organization_id=organization_id,
     )
 
-    # Get organization
-    result = await db.execute(select(Organization).where(Organization.id == organization_id))
-    organization = result.scalar_one_or_none()
+    org_service = OrganizationService(db)
 
-    if not organization:
+    try:
+        update_data = org_update.dict(exclude_unset=True)
+        organization = await org_service.update_organization(
+            organization_id=organization_id,
+            **update_data,
+        )
+
+        return OrganizationUpdateResponse(
+            success=True,
+            message="Organization updated successfully",
+            organization={
+                "id": organization.id,
+                "name": organization.name,
+                "updated_at": organization.updated_at,
+            },
+        )
+    except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Organization not found",
         )
 
-    # Update fields
-    if name is not None:
-        organization.name = name
-    if description is not None:
-        organization.description = description
-    if website is not None:
-        organization.website = website
-    if email is not None:
-        organization.email = email
-    if phone is not None:
-        organization.phone = phone
-    if logo_url is not None:
-        organization.logo_url = logo_url
-    if primary_color is not None:
-        organization.primary_color = primary_color
 
-    await db.commit()
-    await db.refresh(organization)
-
-    return {
-        "success": True,
-        "message": "Organization updated successfully",
-        "organization": {
-            "id": organization.id,
-            "name": organization.name,
-            "updated_at": organization.updated_at,
-        },
-    }
-
-
-@router.get("/{organization_id}/members")
+@router.get("/{organization_id}/members", response_model=MemberListResponse)
 async def get_organization_members(
     organization_id: int,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
 ):
     """Get organization members."""
 
@@ -256,38 +195,32 @@ async def get_organization_members(
         organization_id=organization_id,
     )
 
-    # Get members
-    result = await db.execute(
-        select(User, Membership)
-        .join(Membership, User.id == Membership.user_id)
-        .where(
-            Membership.organization_id == organization_id,
-            Membership.is_active,
-            User.is_active,
-        )
-        .offset(skip)
-        .limit(limit)
+    org_service = OrganizationService(db)
+    user_memberships, total = await org_service.get_organization_members(
+        organization_id=organization_id,
+        page=page,
+        per_page=per_page,
     )
 
-    user_memberships = result.all()
+    members = [
+        MembershipResponse(
+            id=membership.id,
+            user_id=user.id,
+            organization_id=membership.organization_id,
+            role=membership.role,
+            is_active=membership.is_active,
+            user=UserResponse.model_validate(user),
+            created_at=membership.created_at,
+            updated_at=membership.updated_at,
+        )
+        for user, membership in user_memberships
+    ]
 
-    return {
-        "success": True,
-        "members": [
-            {
-                "id": user.id,
-                "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "role": membership.role,
-                "joined_at": membership.created_at,
-                "last_login_at": user.last_login_at,
-            }
-            for user, membership in user_memberships
-        ],
-        "pagination": {
-            "skip": skip,
-            "limit": limit,
-            "total": len(user_memberships),
-        },
-    }
+    return MemberListResponse(
+        success=True,
+        message="Organization members retrieved successfully",
+        members=members,
+        total=total,
+        page=page,
+        per_page=per_page,
+    )

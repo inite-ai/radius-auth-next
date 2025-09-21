@@ -103,6 +103,80 @@ class AuthService:
 
         return api_key_obj.user, api_key_obj
 
+    async def create_api_key(
+        self,
+        user_id: int,
+        name: str,
+        scopes: list[str] | None = None,
+        expires_days: int | None = None,
+    ) -> tuple[str, APIKey]:
+        """Create a new API key for user."""
+
+        from app.utils.security import generate_api_key
+
+        # Generate API key
+        api_key, prefix, key_hash = generate_api_key()
+
+        # Set expiration if provided
+        expires_at = None
+        if expires_days:
+            from app.utils.security import get_expiry_date
+
+            expires_at = get_expiry_date(expires_days)
+
+        # Create API key record
+        api_key_obj = APIKey(
+            user_id=user_id,
+            name=name,
+            prefix=prefix,
+            key_hash=key_hash,
+            scopes=scopes,
+            expires_at=expires_at,
+        )
+
+        self.db.add(api_key_obj)
+        await self.db.commit()
+        await self.db.refresh(api_key_obj)
+
+        return api_key, api_key_obj
+
+    async def list_api_keys(self, user_id: int) -> list[APIKey]:
+        """List user's API keys."""
+
+        from sqlalchemy import select
+
+        result = await self.db.execute(
+            select(APIKey)
+            .where(
+                APIKey.user_id == user_id,
+                APIKey.is_active,
+            )
+            .order_by(APIKey.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def revoke_api_key(self, user_id: int, key_id: int) -> bool:
+        """Revoke user's API key."""
+
+        from sqlalchemy import select
+
+        result = await self.db.execute(
+            select(APIKey).where(
+                APIKey.id == key_id,
+                APIKey.user_id == user_id,
+                APIKey.is_active,
+            )
+        )
+        api_key = result.scalar_one_or_none()
+
+        if not api_key:
+            return False
+
+        api_key.is_active = False
+        await self.db.commit()
+
+        return True
+
     async def create_user_session(
         self,
         user: User,

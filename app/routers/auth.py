@@ -2,34 +2,31 @@
 
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_active_user, get_optional_current_user
 from app.dependencies.database import get_db
 from app.models.user import User
 from app.schemas.auth import (
+    APIKeyCreateRequest,
+    APIKeyCreateResponse,
+    APIKeyListResponse,
     LoginRequest,
     LoginResponse,
+    LogoutResponse,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
     RefreshTokenRequest,
     RefreshTokenResponse,
     TokenResponse,
     UserProfile,
+    VerifyTokenResponse,
 )
+from app.schemas.common import BaseResponse
+from app.schemas.user import UserDetailResponse, UserResponse
 from app.services.auth_service import AuthService
 from app.utils.device_detection import detect_client_type, get_device_info, should_use_cookies
 from app.utils.exceptions import AuthenticationError
-
-
-class APIKeyCreateRequest(BaseModel):
-    """Request model for API key creation."""
-
-    name: str
-    scopes: list[str] | None = None
-    expires_days: int | None = None
-
 
 router = APIRouter()
 
@@ -160,7 +157,7 @@ async def refresh_tokens(
         )
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=LogoutResponse)
 async def logout(
     request: Request,
     response: Response,
@@ -205,13 +202,13 @@ async def logout(
     response.delete_cookie("access_token")
     response.delete_cookie("refresh_token")
 
-    return {
-        "success": True,
-        "message": "Logout successful",
-    }
+    return LogoutResponse(
+        success=True,
+        message="Logout successful",
+    )
 
 
-@router.post("/logout-all")
+@router.post("/logout-all", response_model=LogoutResponse)
 async def logout_all_sessions(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
@@ -222,14 +219,14 @@ async def logout_all_sessions(
 
     revoked_count = await auth_service.logout_all_sessions(current_user.id)
 
-    return {
-        "success": True,
-        "message": f"Logged out from {revoked_count} sessions",
-        "revoked_sessions": revoked_count,
-    }
+    return LogoutResponse(
+        success=True,
+        message=f"Logged out from {revoked_count} sessions",
+        revoked_sessions=revoked_count,
+    )
 
 
-@router.post("/password-reset/request")
+@router.post("/password-reset/request", response_model=BaseResponse)
 async def request_password_reset(
     reset_request: PasswordResetRequest,
     db: AsyncSession = Depends(get_db),
@@ -241,13 +238,13 @@ async def request_password_reset(
     # Always return success to avoid email enumeration
     await auth_service.create_password_reset_token(reset_request.email)
 
-    return {
-        "success": True,
-        "message": "If the email exists, a reset token has been sent",
-    }
+    return BaseResponse(
+        success=True,
+        message="If the email exists, a reset token has been sent",
+    )
 
 
-@router.post("/password-reset/confirm")
+@router.post("/password-reset/confirm", response_model=BaseResponse)
 async def confirm_password_reset(
     reset_confirm: PasswordResetConfirmRequest,
     db: AsyncSession = Depends(get_db),
@@ -259,10 +256,10 @@ async def confirm_password_reset(
     try:
         await auth_service.reset_password(reset_confirm.token, reset_confirm.new_password)
 
-        return {
-            "success": True,
-            "message": "Password reset successful",
-        }
+        return BaseResponse(
+            success=True,
+            message="Password reset successful",
+        )
 
     except Exception:
         raise HTTPException(
@@ -271,39 +268,30 @@ async def confirm_password_reset(
         )
 
 
-@router.get("/me")
+@router.get("/me", response_model=UserDetailResponse)
 async def get_current_user_info(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get current user information."""
 
-    return {
-        "success": True,
-        "user": {
-            "id": current_user.id,
-            "email": current_user.email,
-            "username": current_user.username,
-            "first_name": current_user.first_name,
-            "last_name": current_user.last_name,
-            "is_verified": current_user.is_verified,
-            "is_superuser": current_user.is_superuser,
-            "created_at": current_user.created_at,
-            "last_login_at": current_user.last_login_at,
-        },
-    }
+    return UserDetailResponse(
+        success=True,
+        message="User information retrieved successfully",
+        user=UserResponse.model_validate(current_user),
+    )
 
 
-@router.post("/verify-token")
+@router.post("/verify-token", response_model=VerifyTokenResponse)
 async def verify_token(
     current_user: User = Depends(get_current_active_user),
 ):
     """Verify if current token is valid."""
 
-    return {
-        "success": True,
-        "message": "Token is valid",
-        "user_id": current_user.id,
-    }
+    return VerifyTokenResponse(
+        success=True,
+        message="Token is valid",
+        user_id=current_user.id,
+    )
 
 
 # ================== MOBILE/API CLIENT SPECIFIC ENDPOINTS ==================
@@ -313,7 +301,7 @@ async def verify_token(
 # It auto-detects client type and returns appropriate response format
 
 
-@router.post("/api-key/create")
+@router.post("/api-key/create", response_model=APIKeyCreateResponse)
 async def create_api_key(
     request: APIKeyCreateRequest,
     current_user: User = Depends(get_current_active_user),
@@ -326,6 +314,7 @@ async def create_api_key(
     """
 
     from app.models.api_key import APIKey
+    from app.schemas.auth import APIKeyResponse
     from app.utils.security import create_expiration_time, generate_api_key, hash_token
 
     # Generate API key
@@ -351,63 +340,62 @@ async def create_api_key(
     await db.commit()
     await db.refresh(api_key_record)
 
-    return {
-        "success": True,
-        "message": "API key created successfully",
-        "api_key": api_key,  # Only returned once!
-        "key_info": {
-            "id": api_key_record.id,
-            "name": api_key_record.name,
-            "prefix": api_key_record.prefix,
-            "scopes": api_key_record.scopes_list,
-            "expires_at": api_key_record.expires_at,
-            "created_at": api_key_record.created_at,
-        },
-        "warning": "Store this API key securely. It will not be shown again.",
-    }
+    key_info = APIKeyResponse(
+        id=api_key_record.id,
+        name=api_key_record.name,
+        prefix=api_key_record.prefix,
+        scopes=api_key_record.scopes_list,
+        is_valid=api_key_record.is_valid,
+        last_used_at=api_key_record.last_used_at,
+        usage_count=api_key_record.usage_count,
+        expires_at=api_key_record.expires_at,
+        created_at=api_key_record.created_at,
+    )
+
+    return APIKeyCreateResponse(
+        success=True,
+        message="API key created successfully",
+        api_key=api_key,
+        key_info=key_info,
+        warning="Store this API key securely. It will not be shown again.",
+    )
 
 
-@router.get("/api-keys")
+@router.get("/api-keys", response_model=APIKeyListResponse)
 async def list_api_keys(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """List user's API keys (without the actual keys)."""
 
-    from sqlalchemy import select
+    auth_service = AuthService(db)
+    api_keys = await auth_service.list_api_keys(current_user.id)
 
-    from app.models.api_key import APIKey
+    from app.schemas.auth import APIKeyResponse
 
-    result = await db.execute(
-        select(APIKey)
-        .where(
-            APIKey.user_id == current_user.id,
-            APIKey.is_active,
+    api_key_responses = [
+        APIKeyResponse(
+            id=key.id,
+            name=key.name,
+            prefix=key.prefix,
+            scopes=key.scopes_list,
+            is_valid=key.is_valid,
+            last_used_at=key.last_used_at,
+            usage_count=key.usage_count,
+            expires_at=key.expires_at,
+            created_at=key.created_at,
         )
-        .order_by(APIKey.created_at.desc())
+        for key in api_keys
+    ]
+
+    return APIKeyListResponse(
+        success=True,
+        message="API keys retrieved successfully",
+        api_keys=api_key_responses,
     )
-    api_keys = result.scalars().all()
-
-    return {
-        "success": True,
-        "api_keys": [
-            {
-                "id": key.id,
-                "name": key.name,
-                "prefix": key.prefix,
-                "scopes": key.scopes_list,
-                "is_valid": key.is_valid,
-                "last_used_at": key.last_used_at,
-                "usage_count": key.usage_count,
-                "expires_at": key.expires_at,
-                "created_at": key.created_at,
-            }
-            for key in api_keys
-        ],
-    }
 
 
-@router.delete("/api-keys/{key_id}")
+@router.delete("/api-keys/{key_id}", response_model=BaseResponse)
 async def revoke_api_key(
     key_id: int,
     current_user: User = Depends(get_current_active_user),
@@ -415,28 +403,17 @@ async def revoke_api_key(
 ):
     """Revoke an API key."""
 
-    from sqlalchemy import select
+    auth_service = AuthService(db)
 
-    from app.models.api_key import APIKey
+    revoked = await auth_service.revoke_api_key(current_user.id, key_id)
 
-    result = await db.execute(
-        select(APIKey).where(
-            APIKey.id == key_id,
-            APIKey.user_id == current_user.id,
-        )
-    )
-    api_key = result.scalar_one_or_none()
-
-    if not api_key:
+    if not revoked:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="API key not found",
         )
 
-    api_key.revoke()
-    await db.commit()
-
-    return {
-        "success": True,
-        "message": "API key revoked successfully",
-    }
+    return BaseResponse(
+        success=True,
+        message="API key revoked successfully",
+    )

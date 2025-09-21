@@ -74,3 +74,54 @@ class UserProfile(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class APIKeyCreateRequest(BaseModel):
+    """Request model for API key creation."""
+
+    name: str = Field(..., description="API key name")
+    scopes: list[str] | None = Field(None, description="API key scopes")
+    expires_days: int | None = Field(None, ge=1, le=365, description="Expiration in days")
+
+
+class APIKeyResponse(BaseModel):
+    """Response model for API key."""
+
+    id: int
+    name: str
+    prefix: str
+    scopes: list[str]
+    is_valid: bool
+    last_used_at: datetime | None
+    usage_count: int
+    expires_at: datetime | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class APIKeyCreateResponse(BaseResponse):
+    """Response model for API key creation."""
+
+    api_key: str
+    key_info: APIKeyResponse
+    warning: str
+
+
+class APIKeyListResponse(BaseResponse):
+    """Response model for API key list."""
+
+    api_keys: list[APIKeyResponse]
+
+
+class LogoutResponse(BaseResponse):
+    """Response model for logout."""
+
+    revoked_sessions: int | None = None
+
+
+class VerifyTokenResponse(BaseResponse):
+    """Response model for token verification."""
+
+    user_id: int

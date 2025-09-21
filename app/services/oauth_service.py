@@ -316,6 +316,38 @@ class OAuthService:
 
         return False
 
+    async def list_user_clients(self, user_id: int) -> list[OAuthClient]:
+        """List OAuth clients for user."""
+
+        result = await self.db.execute(
+            select(OAuthClient)
+            .where(
+                OAuthClient.user_id == user_id,
+                OAuthClient.is_active,
+            )
+            .order_by(OAuthClient.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def delete_user_client(self, user_id: int, client_id: str) -> bool:
+        """Delete OAuth client for user."""
+
+        result = await self.db.execute(
+            select(OAuthClient).where(
+                OAuthClient.client_id == client_id,
+                OAuthClient.user_id == user_id,
+            )
+        )
+        client = result.scalar_one_or_none()
+
+        if not client:
+            return False
+
+        client.is_active = False
+        await self.db.commit()
+
+        return True
+
     async def get_user_permissions(self, token: OAuthAccessToken, user: User) -> dict[str, any]:
         """Get user info based on token scopes."""
 

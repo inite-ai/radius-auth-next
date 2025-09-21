@@ -3,7 +3,6 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_active_user, get_current_organization
@@ -20,6 +19,8 @@ from app.schemas.user import (
     UserResponse,
     UserUpdate,
 )
+from app.services.user_service import UserService
+from app.utils.exceptions import NotFoundError, ValidationError
 
 router = APIRouter()
 
@@ -41,26 +42,27 @@ async def create_user(
         organization_id=organization.id if organization else None,
     )
 
-    # Check if email already exists
-    result = await db.execute(select(User).where(User.email == user_create.email))
-    existing_user = result.scalar_one_or_none()
+    user_service = UserService(db)
 
-    if existing_user:
+    try:
+        user = await user_service.create_user(
+            email=user_create.email,
+            password=user_create.password,
+            first_name=user_create.first_name,
+            last_name=user_create.last_name,
+            username=user_create.username,
+            middle_name=user_create.middle_name,
+            phone=user_create.phone,
+            avatar_url=user_create.avatar_url,
+            timezone=user_create.timezone,
+            locale=user_create.locale,
+            bio=user_create.bio,
+        )
+    except ValidationError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
+            detail=str(e),
         )
-
-    # Create user
-    from app.utils.security import hash_password
-
-    user_data = user_create.dict(exclude={"password"})
-    user_data["password_hash"] = hash_password(user_create.password)
-
-    user = User(**user_data)
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
 
     return UserDetailResponse(
         success=True,
@@ -88,38 +90,15 @@ async def get_users(
         organization_id=organization.id if organization else None,
     )
 
-    # Build query
-    query = select(User).where(User.is_active)
+    user_service = UserService(db)
 
-    # Filter by organization if specified
-    if organization:
-        # Join with memberships to filter by organization
-        from app.models.membership import Membership
-
-        query = query.join(Membership).where(
-            Membership.organization_id == organization.id,
-            Membership.is_active,
-        )
-
-    # Add search filter
-    if search:
-        search_term = f"%{search}%"
-        query = query.where(
-            User.first_name.ilike(search_term)
-            | User.last_name.ilike(search_term)
-            | User.email.ilike(search_term)
-        )
-
-    # Count total for pagination
-    count_result = await db.execute(query)
-    total = len(count_result.scalars().all())
-
-    # Apply pagination
     skip = (page - 1) * per_page
-    query = query.offset(skip).limit(per_page)
-
-    result = await db.execute(query)
-    users = result.scalars().all()
+    users, total = await user_service.get_users(
+        organization_id=organization.id if organization else None,
+        search=search,
+        skip=skip,
+        limit=per_page,
+    )
 
     return UserListResponse(
         success=True,
@@ -161,11 +140,11 @@ async def get_user(
         organization_id=organization.id if organization else None,
     )
 
-    # Get user
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    user_service = UserService(db)
 
-    if not user:
+    try:
+        user = await user_service.get_user_by_id(user_id)
+    except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -197,23 +176,15 @@ async def update_user(
         organization_id=organization.id if organization else None,
     )
 
-    # Get user
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    user_service = UserService(db)
 
-    if not user:
+    try:
+        user = await user_service.update_user(user_id, **user_update.dict(exclude_unset=True))
+    except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-
-    # Update fields
-    update_data = user_update.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(user, field, value)
-
-    await db.commit()
-    await db.refresh(user)
 
     return UserDetailResponse(
         success=True,
@@ -240,19 +211,15 @@ async def delete_user(
         organization_id=organization.id if organization else None,
     )
 
-    # Get user
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    user_service = UserService(db)
 
-    if not user:
+    try:
+        await user_service.delete_user(user_id)
+    except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-
-    # Deactivate user instead of hard delete
-    user.is_active = False
-    await db.commit()
 
     return {
         "success": True,

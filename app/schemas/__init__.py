@@ -2,6 +2,7 @@
 
 from .auth import *
 from .common import *
+from .oauth import *
 from .organization import *
 from .session import *
 from .user import *
@@ -21,6 +22,18 @@ __all__ = [
     "PasswordResetRequest",
     "PasswordResetConfirmRequest",
     "UserProfile",
+    "APIKeyCreateRequest",
+    "APIKeyCreateResponse",
+    "APIKeyListResponse",
+    "LogoutResponse",
+    "VerifyTokenResponse",
+    # OAuth
+    "OAuthClientCreateRequest",
+    "OAuthClientCreateResponse",
+    "OAuthClientListResponse",
+    "OAuthTokenResponse",
+    "OAuthUserInfoResponse",
+    "OAuthMetadataResponse",
     # User
     "UserCreate",
     "UserUpdate",
@@ -30,6 +43,7 @@ __all__ = [
     # Organization
     "OrganizationCreate",
     "OrganizationUpdate",
+    "OrganizationUpdateResponse",
     "OrganizationResponse",
     "MembershipResponse",
     "OrganizationListResponse",

@@ -151,6 +151,12 @@ class OrganizationDetailResponse(BaseResponse):
     user_role: str | None
 
 
+class OrganizationUpdateResponse(BaseResponse):
+    """Schema for organization update response."""
+
+    organization: dict  # Contains id, name, updated_at
+
+
 class MemberListResponse(BaseResponse):
     """Schema for member list response."""
 
