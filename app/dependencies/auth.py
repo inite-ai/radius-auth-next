@@ -45,8 +45,8 @@ async def get_current_user(
                         select(Session).where(
                             Session.id == payload["session_id"],
                             Session.user_id == user.id,
-                            Session.is_active,
-                            not Session.is_revoked,
+                            Session.is_active == True,
+                            Session.is_revoked == False,
                         )
                     )
                     session = session_result.scalar_one_or_none()
@@ -187,7 +187,7 @@ async def get_current_organization(
         select(Membership).where(
             Membership.user_id == current_user.id,
             Membership.organization_id == organization.id,
-            Membership.is_active,
+            Membership.is_active == True,
         )
     )
     membership = membership_result.scalar_one_or_none()
