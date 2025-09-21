@@ -6,7 +6,6 @@ from app.constants.status_codes import APIStatus
 from app.decorators.permissions import (
     require_create_permission,
     require_organization_permission,
-    require_read_permission,
     validate_organization_exists,
 )
 from app.dependencies.auth import get_current_active_user
@@ -33,7 +32,6 @@ router = APIRouter()
 
 
 @router.get("/", response_model=OrganizationListResponse)
-@require_read_permission("organization")
 async def get_organizations(
     current_user: User = Depends(get_current_active_user),
     org_service: OrganizationService = Depends(get_organization_service),

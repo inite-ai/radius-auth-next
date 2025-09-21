@@ -94,25 +94,25 @@ class OrganizationNotFoundError(NotFoundError):
     """Raised when organization is not found."""
 
     def __init__(self, message: str = "Organization not found", **kwargs):
-        super().__init__(message, error_code="ORGANIZATION_NOT_FOUND", **kwargs)
+        super().__init__(message, **kwargs)
 
 
 class UserNotFoundError(NotFoundError):
     """Raised when user is not found."""
 
     def __init__(self, message: str = "User not found", **kwargs):
-        super().__init__(message, error_code="USER_NOT_FOUND", **kwargs)
+        super().__init__(message, **kwargs)
 
 
 class EmailAlreadyExistsError(ConflictError):
     """Raised when email already exists."""
 
     def __init__(self, message: str = "Email already exists", **kwargs):
-        super().__init__(message, error_code="EMAIL_EXISTS", **kwargs)
+        super().__init__(message, **kwargs)
 
 
 class UsernameAlreadyExistsError(ConflictError):
     """Raised when username already exists."""
 
     def __init__(self, message: str = "Username already exists", **kwargs):
-        super().__init__(message, error_code="USERNAME_EXISTS", **kwargs)
+        super().__init__(message, **kwargs)

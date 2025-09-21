@@ -24,7 +24,9 @@ router = APIRouter()
 # ==================== CLIENT MANAGEMENT ====================
 
 
-@router.post("/clients", response_model=OAuthClientCreateResponse)
+@router.post(
+    "/clients", response_model=OAuthClientCreateResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_oauth_client(
     request: OAuthClientCreateRequest,
     current_user: User = Depends(get_current_active_user),

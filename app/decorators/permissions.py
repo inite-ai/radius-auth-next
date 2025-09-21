@@ -132,7 +132,7 @@ def validate_user_exists(user_id_param: str = "user_id"):
 
             # Get user_id from kwargs
             user_id = kwargs.get(user_id_param)
-            if not user_id:
+            if user_id is None:
                 raise ValueError(f"Parameter '{user_id_param}' not found")
 
             # Validate user exists (will raise NotFoundError if not exists)
@@ -166,7 +166,7 @@ def validate_organization_exists(org_id_param: str = "organization_id"):
 
             # Get organization_id from kwargs
             org_id = kwargs.get(org_id_param)
-            if not org_id:
+            if org_id is None:
                 raise ValueError(f"Parameter '{org_id_param}' not found")
 
             # Validate organization exists (will raise NotFoundError if not exists)
@@ -217,7 +217,7 @@ def validate_organization_membership(org_id_param: str = "organization_id"):
 
             # Get organization_id from kwargs
             org_id = kwargs.get(org_id_param)
-            if not org_id:
+            if org_id is None:
                 raise ValueError(f"Parameter '{org_id_param}' not found")
 
             # Check membership

@@ -1,5 +1,7 @@
 """Comprehensive tests for decorators, validators, and edge cases."""
 
+import time
+
 import pytest
 from fastapi import status
 from httpx import AsyncClient
@@ -9,17 +11,26 @@ from app.models.membership import Role
 pytestmark = pytest.mark.asyncio
 
 
+def make_unique_email(base_email: str) -> str:
+    """Generate unique email for each test to avoid conflicts."""
+    timestamp = str(int(time.time() * 1000))[-6:]  # Last 6 digits of timestamp
+    username, domain = base_email.split("@")
+    return f"{username}_{timestamp}@{domain}"
+
+
 class TestValidatorDecorators:
     """Test validator decorators and their edge cases."""
 
     async def test_validate_user_exists_decorator(self, async_client: AsyncClient):
         """Test @validate_user_exists decorator thoroughly."""
-        # Create test user
-        user = await self.create_test_user(async_client, "user@test.com")
+        # Create test user with organization
+        user = await self.create_user_with_org(
+            async_client, make_unique_email("user@test.com"), Role.OWNER
+        )
 
         # Test 1: Valid user ID - should work
         response = await async_client.get(
-            f"/api/v1/users/{user['user_id']}",
+            f"/api/v1/users/{user['user_id']}?organization_id={user['org_id']}",
             headers=user["headers"],
         )
         assert response.status_code == status.HTTP_200_OK
@@ -29,7 +40,7 @@ class TestValidatorDecorators:
 
         # Test 2: Non-existent user ID - should return 404
         response = await async_client.get(
-            "/api/v1/users/99999",
+            f"/api/v1/users/99999?organization_id={user['org_id']}",
             headers=user["headers"],
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -38,29 +49,35 @@ class TestValidatorDecorators:
 
         # Test 3: Invalid user ID format - should return 422
         response = await async_client.get(
-            "/api/v1/users/invalid",
+            f"/api/v1/users/invalid?organization_id={user['org_id']}",
             headers=user["headers"],
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-        # Test 4: Negative user ID - should return 422
+        # Test 4: Negative user ID - valid integer but non-existent user returns 404
         response = await async_client.get(
-            "/api/v1/users/-1",
+            f"/api/v1/users/-1?organization_id={user['org_id']}",
             headers=user["headers"],
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        data = response.json()
+        assert "User not found" in data["message"]
 
-        # Test 5: User ID as zero - should return 422
+        # Test 5: User ID as zero - valid integer but non-existent user returns 404
         response = await async_client.get(
-            "/api/v1/users/0",
+            f"/api/v1/users/0?organization_id={user['org_id']}",
             headers=user["headers"],
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        data = response.json()
+        assert "User not found" in data["message"]
 
     async def test_validate_organization_exists_decorator(self, async_client: AsyncClient):
         """Test @validate_organization_exists decorator thoroughly."""
         # Create test user with organization
-        user = await self.create_user_with_org(async_client, "user@test.com", Role.OWNER)
+        user = await self.create_user_with_org(
+            async_client, make_unique_email("user@test.com"), Role.OWNER
+        )
 
         # Test 1: Valid organization ID - should work
         response = await async_client.get(
@@ -105,12 +122,23 @@ class TestValidatorDecorators:
     async def test_validator_with_permission_interaction(self, async_client: AsyncClient):
         """Test interaction between validators and permission decorators."""
         # Create two organizations
-        org1_owner = await self.create_user_with_org(async_client, "org1@test.com", Role.OWNER)
-        org2_owner = await self.create_user_with_org(async_client, "org2@test.com", Role.OWNER)
+        org1_owner = await self.create_user_with_org(
+            async_client, make_unique_email("org1@test.com"), Role.OWNER
+        )
+        org2_owner = await self.create_user_with_org(
+            async_client, make_unique_email("org2@test.com"), Role.OWNER
+        )
 
         # Create user in org1
-        org1_user = await self.create_user_with_org(
-            async_client, "org1user@test.com", Role.EDITOR, org1_owner["org_id"]
+        org1_user = await self.create_test_user(
+            async_client, make_unique_email("org1user@test.com")
+        )
+        await self.add_user_to_org(
+            async_client,
+            org1_owner["headers"],
+            org1_owner["org_id"],
+            org1_user["user_id"],
+            Role.EDITOR,
         )
 
         # Test 1: Validator passes, but permission fails
@@ -140,11 +168,13 @@ class TestValidatorDecorators:
 
     async def test_decorator_error_messages(self, async_client: AsyncClient):
         """Test that decorators return appropriate error messages."""
-        user = await self.create_test_user(async_client, "user@test.com")
+        user = await self.create_user_with_org(
+            async_client, make_unique_email("user@test.com"), Role.OWNER
+        )
 
-        # Test user not found message
+        # Test user not found message (with organization context)
         response = await async_client.get(
-            "/api/v1/users/99999",
+            f"/api/v1/users/99999?organization_id={user['org_id']}",
             headers=user["headers"],
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -223,7 +253,7 @@ class TestValidatorDecorators:
             # Create organization
             org_data = {
                 "name": f"Test Org for {email}",
-                "slug": f"test-org-{email.split('@')[0]}",
+                "slug": f"test-org-{email.split('@')[0].replace('_', '-')}",
                 "description": "Test organization",
             }
 
@@ -243,6 +273,19 @@ class TestValidatorDecorators:
             "email": email,
             "role": role,
         }
+
+    async def add_user_to_org(
+        self, client: AsyncClient, owner_headers: dict, org_id: int, user_id: int, role: Role
+    ) -> None:
+        """Add a user to organization with specific role using owner permissions."""
+        add_member_data = {"user_id": user_id, "role": role.value}
+
+        response = await client.post(
+            f"/api/v1/organizations/{org_id}/members",
+            json=add_member_data,
+            headers=owner_headers,
+        )
+        assert response.status_code == status.HTTP_201_CREATED
 
 
 class TestPermissionEdgeCases:
@@ -348,23 +391,25 @@ class TestPermissionEdgeCases:
     async def test_permission_with_soft_deleted_resources(self, async_client: AsyncClient):
         """Test permissions when resources are soft-deleted."""
         # Create user and organization
-        user = await self.create_user_with_org(async_client, "user@test.com", Role.OWNER)
+        user = await self.create_user_with_org(
+            async_client, make_unique_email("user@test.com"), Role.OWNER
+        )
 
         # Create another user
         target_user = await self.create_user_with_org(
-            async_client, "target@test.com", Role.EDITOR, user["org_id"]
+            async_client, make_unique_email("target@test.com"), Role.EDITOR, user["org_id"]
         )
 
         # Delete the target user (soft delete)
         response = await async_client.delete(
-            f"/api/v1/users/{target_user['user_id']}",
+            f"/api/v1/users/{target_user['user_id']}?organization_id={user['org_id']}",
             headers=user["headers"],
         )
         assert response.status_code == status.HTTP_200_OK
 
         # Try to access the deleted user - should return 404 or appropriate error
         response = await async_client.get(
-            f"/api/v1/users/{target_user['user_id']}",
+            f"/api/v1/users/{target_user['user_id']}?organization_id={user['org_id']}",
             headers=user["headers"],
         )
         # Depending on implementation, this could be 404 or 200 with is_active=False
@@ -373,18 +418,24 @@ class TestPermissionEdgeCases:
     async def test_permission_inheritance_edge_cases(self, async_client: AsyncClient):
         """Test edge cases in permission inheritance."""
         # Create organization hierarchy
-        org_owner = await self.create_user_with_org(async_client, "owner@test.com", Role.OWNER)
+        org_owner = await self.create_user_with_org(
+            async_client, make_unique_email("owner@test.com"), Role.OWNER
+        )
 
         # Test creating users with different permission levels
         test_cases = [
-            (Role.ADMIN, "admin@test.com"),
-            (Role.EDITOR, "editor@test.com"),
-            (Role.VIEWER, "viewer@test.com"),
+            (Role.ADMIN, make_unique_email("admin@test.com")),
+            (Role.EDITOR, make_unique_email("editor@test.com")),
+            (Role.VIEWER, make_unique_email("viewer@test.com")),
         ]
 
         created_users = []
         for role, email in test_cases:
-            user = await self.create_user_with_org(async_client, email, role, org_owner["org_id"])
+            # Create test user and add to organization
+            user = await self.create_test_user(async_client, email)
+            await self.add_user_to_org(
+                async_client, org_owner["headers"], org_owner["org_id"], user["user_id"], role
+            )
             created_users.append((user, role))
 
         # Test that each user can perform actions appropriate to their role
@@ -400,7 +451,7 @@ class TestPermissionEdgeCases:
 
             # Test user list access (all should have read permission)
             response = await async_client.get(
-                "/api/v1/users/",
+                f"/api/v1/users/?organization_id={org_owner['org_id']}",
                 headers=user_data["headers"],
             )
             assert (
@@ -470,7 +521,7 @@ class TestPermissionEdgeCases:
             # Create organization
             org_data = {
                 "name": f"Test Org for {email}",
-                "slug": f"test-org-{email.split('@')[0]}",
+                "slug": f"test-org-{email.split('@')[0].replace('_', '-')}",
                 "description": "Test organization",
             }
 
@@ -491,17 +542,32 @@ class TestPermissionEdgeCases:
             "role": role,
         }
 
+    async def add_user_to_org(
+        self, client: AsyncClient, owner_headers: dict, org_id: int, user_id: int, role: Role
+    ) -> None:
+        """Add a user to organization with specific role using owner permissions."""
+        add_member_data = {"user_id": user_id, "role": role.value}
+
+        response = await client.post(
+            f"/api/v1/organizations/{org_id}/members",
+            json=add_member_data,
+            headers=owner_headers,
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
 
 class TestResponseBuilderIntegration:
     """Test that ResponseBuilder is properly integrated with permission decorators."""
 
     async def test_response_format_consistency(self, async_client: AsyncClient):
         """Test that all endpoints return consistent response formats."""
-        user = await self.create_user_with_org(async_client, "user@test.com", Role.OWNER)
+        user = await self.create_user_with_org(
+            async_client, make_unique_email("user@test.com"), Role.OWNER
+        )
 
         # Test user endpoints return consistent format
         response = await async_client.get(
-            "/api/v1/users/",
+            f"/api/v1/users/?organization_id={user['org_id']}",
             headers=user["headers"],
         )
         assert response.status_code == status.HTTP_200_OK
@@ -541,11 +607,13 @@ class TestResponseBuilderIntegration:
 
     async def test_error_response_format_consistency(self, async_client: AsyncClient):
         """Test that error responses are also consistent."""
-        user = await self.create_test_user(async_client, "user@test.com")
+        user = await self.create_user_with_org(
+            async_client, make_unique_email("user@test.com"), Role.OWNER
+        )
 
         # Test 404 errors have consistent format
         response = await async_client.get(
-            "/api/v1/users/99999",
+            f"/api/v1/users/99999?organization_id={user['org_id']}",
             headers=user["headers"],
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -555,7 +623,9 @@ class TestResponseBuilderIntegration:
         assert "User not found" in data["message"]
 
         # Test 403 errors have consistent format
-        other_user = await self.create_user_with_org(async_client, "other@test.com", Role.OWNER)
+        other_user = await self.create_user_with_org(
+            async_client, make_unique_email("other@test.com"), Role.OWNER
+        )
 
         response = await async_client.get(
             f"/api/v1/organizations/{other_user['org_id']}",
@@ -629,7 +699,7 @@ class TestResponseBuilderIntegration:
             # Create organization
             org_data = {
                 "name": f"Test Org for {email}",
-                "slug": f"test-org-{email.split('@')[0]}",
+                "slug": f"test-org-{email.split('@')[0].replace('_', '-')}",
                 "description": "Test organization",
             }
 

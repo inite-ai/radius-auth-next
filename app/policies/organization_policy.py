@@ -40,7 +40,11 @@ class OrganizationPolicy(BasePolicy):
 
     def _check_read(self, context: PolicyContext) -> PolicyResult:
         """Check read permissions for organizations."""
-        # Reading organization requires being a member of that organization
+        # If no organization context, allow (for listing user's organizations)
+        if context.organization_id is None:
+            return PolicyResult.allow()
+
+        # Reading specific organization requires being a member of that organization
         if not context.is_organization_member():
             return PolicyResult.deny("Must be organization member to read organization details")
 

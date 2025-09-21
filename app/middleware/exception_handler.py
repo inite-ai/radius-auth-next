@@ -62,8 +62,8 @@ class ExceptionHandlers:
             ConflictError: status.HTTP_409_CONFLICT,
             EmailAlreadyExistsError: status.HTTP_409_CONFLICT,
             UsernameAlreadyExistsError: status.HTTP_409_CONFLICT,
-            # Validation errors -> 422
-            ValidationError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+            # Validation errors -> 400
+            ValidationError: status.HTTP_400_BAD_REQUEST,
         }
 
         status_code = status_mapping.get(type(exc), status.HTTP_500_INTERNAL_SERVER_ERROR)

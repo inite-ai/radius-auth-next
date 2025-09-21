@@ -1,10 +1,20 @@
 """Tests for transaction manager atomicity and error handling."""
 
+import time
+
 import pytest
 from fastapi import status
 from httpx import AsyncClient
 
 from app.models.membership import Role
+
+
+def make_unique_email(base_email: str) -> str:
+    """Generate unique email for each test to avoid conflicts."""
+    timestamp = str(int(time.time() * 1000))[-6:]  # Last 6 digits of timestamp
+    username, domain = base_email.split("@")
+    return f"{username}_{timestamp}@{domain}"
+
 
 pytestmark = pytest.mark.asyncio
 
@@ -15,7 +25,7 @@ class TestTransactionAtomicity:
     async def test_organization_creation_atomicity(self, async_client: AsyncClient):
         """Test that organization creation with membership is atomic."""
         # Create user
-        user = await self.create_test_user(async_client, "user@test.com")
+        user = await self.create_test_user(async_client, make_unique_email("user@test.com"))
 
         # Test successful organization creation
         org_data = {
@@ -53,8 +63,8 @@ class TestTransactionAtomicity:
     ):
         """Test that failed organization creation rolls back properly."""
         # Create two users
-        user1 = await self.create_test_user(async_client, "user1@test.com")
-        user2 = await self.create_test_user(async_client, "user2@test.com")
+        user1 = await self.create_test_user(async_client, make_unique_email("user1@test.com"))
+        user2 = await self.create_test_user(async_client, make_unique_email("user2@test.com"))
 
         # First user creates organization
         org_data = {
@@ -86,7 +96,7 @@ class TestTransactionAtomicity:
 
         # Verify the conflict error message
         data = response.json()
-        assert "already exists" in data["detail"].lower()
+        assert "already exists" in data["message"].lower()
 
         # Verify no partial organization was created for user2
         # (This tests that the transaction was properly rolled back)
@@ -103,14 +113,14 @@ class TestTransactionAtomicity:
     async def test_password_change_atomicity(self, async_client: AsyncClient):
         """Test that password change with session revocation is atomic."""
         # Create user
-        user = await self.create_test_user(async_client, "user@test.com")
+        user = await self.create_test_user(async_client, make_unique_email("user@test.com"))
 
         # Create multiple sessions by logging in multiple times
         additional_sessions = []
         for i in range(3):
             login_response = await async_client.post(
                 "/api/v1/auth/login",
-                json={"email": "user@test.com", "password": "TestPassword123!"},
+                json={"email": user["email"], "password": "TestPassword123!"},
             )
             assert login_response.status_code == status.HTTP_200_OK
             additional_sessions.append(login_response.json())
@@ -121,8 +131,8 @@ class TestTransactionAtomicity:
             "new_password": "NewPassword123!",
         }
 
-        response = await async_client.put(
-            "/api/v1/auth/change-password",
+        response = await async_client.post(
+            "/api/v1/users/change-password",
             json=password_change_data,
             headers=user["headers"],
         )
@@ -130,13 +140,13 @@ class TestTransactionAtomicity:
 
         # Verify password was changed by trying to login with old password
         old_login_response = await async_client.post(
-            "/api/v1/auth/login", json={"email": "user@test.com", "password": "TestPassword123!"}
+            "/api/v1/auth/login", json={"email": user["email"], "password": "TestPassword123!"}
         )
         assert old_login_response.status_code == status.HTTP_401_UNAUTHORIZED
 
         # Verify can login with new password
         new_login_response = await async_client.post(
-            "/api/v1/auth/login", json={"email": "user@test.com", "password": "NewPassword123!"}
+            "/api/v1/auth/login", json={"email": user["email"], "password": "NewPassword123!"}
         )
         assert new_login_response.status_code == status.HTTP_200_OK
 
@@ -145,7 +155,7 @@ class TestTransactionAtomicity:
             if "tokens" in session and session["tokens"]:
                 old_headers = {"Authorization": f"Bearer {session['tokens']['access_token']}"}
                 profile_response = await async_client.get(
-                    "/api/v1/auth/profile",
+                    "/api/v1/users/profile",
                     headers=old_headers,
                 )
                 # Old sessions should be unauthorized
@@ -156,7 +166,7 @@ class TestTransactionAtomicity:
     ):
         """Test that password change rolls back on validation error."""
         # Create user
-        user = await self.create_test_user(async_client, "user@test.com")
+        user = await self.create_test_user(async_client, make_unique_email("user@test.com"))
 
         # Try to change password with wrong current password
         password_change_data = {
@@ -164,8 +174,8 @@ class TestTransactionAtomicity:
             "new_password": "NewPassword123!",
         }
 
-        response = await async_client.put(
-            "/api/v1/auth/change-password",
+        response = await async_client.post(
+            "/api/v1/users/change-password",
             json=password_change_data,
             headers=user["headers"],
         )
@@ -173,27 +183,27 @@ class TestTransactionAtomicity:
 
         # Verify password was NOT changed
         login_response = await async_client.post(
-            "/api/v1/auth/login", json={"email": "user@test.com", "password": "TestPassword123!"}
+            "/api/v1/auth/login", json={"email": user["email"], "password": "TestPassword123!"}
         )
         assert login_response.status_code == status.HTTP_200_OK
 
         # Verify new password doesn't work
         new_login_response = await async_client.post(
-            "/api/v1/auth/login", json={"email": "user@test.com", "password": "NewPassword123!"}
+            "/api/v1/auth/login", json={"email": user["email"], "password": "NewPassword123!"}
         )
         assert new_login_response.status_code == status.HTTP_401_UNAUTHORIZED
 
     async def test_session_revocation_atomicity(self, async_client: AsyncClient):
         """Test that session revocation operations are atomic."""
         # Create user and multiple sessions
-        user = await self.create_test_user(async_client, "user@test.com")
+        user = await self.create_test_user(async_client, make_unique_email("user@test.com"))
 
         # Create additional sessions
         sessions = [user]  # Include original session
         for i in range(4):
             login_response = await async_client.post(
                 "/api/v1/auth/login",
-                json={"email": "user@test.com", "password": "TestPassword123!"},
+                json={"email": user["email"], "password": "TestPassword123!"},
             )
             assert login_response.status_code == status.HTTP_200_OK
             login_data = login_response.json()
@@ -216,20 +226,23 @@ class TestTransactionAtomicity:
             "/api/v1/sessions/",
             headers=current_session["headers"],
         )
+
         assert current_sessions_response.status_code == status.HTTP_200_OK
 
-        session_list = current_sessions_response.json()["sessions"]
+        sessions_data = current_sessions_response.json()
+        session_list = sessions_data["sessions"]
         assert len(session_list) >= 4  # Should have multiple sessions
 
         # Find a session ID to use as current (use first one in list)
-        current_session_id = session_list[0]["id"] if session_list else "fake-session-id"
+        current_session_id = str(session_list[0]["id"]) if session_list else "fake-session-id"
 
         # Revoke other sessions
         revoke_data = {
             "current_session_id": current_session_id,
         }
 
-        response = await async_client.delete(
+        response = await async_client.request(
+            "DELETE",
             "/api/v1/sessions/other",
             json=revoke_data,
             headers=current_session["headers"],
@@ -246,13 +259,15 @@ class TestTransactionAtomicity:
         """Test OAuth token exchange atomicity."""
         # This test requires OAuth client setup, so we'll create a simplified version
         # Create user and organization first
-        user = await self.create_user_with_org(async_client, "user@test.com", Role.OWNER)
+        user = await self.create_user_with_org(
+            async_client, make_unique_email("user@test.com"), Role.OWNER
+        )
 
         # Create OAuth client
         client_data = {
             "name": "Test Client",
             "redirect_uris": ["http://localhost:3000/callback"],
-            "scopes": ["read", "write"],
+            "allowed_scopes": ["profile", "email"],
             "grant_types": ["authorization_code", "refresh_token"],
         }
 
@@ -267,24 +282,25 @@ class TestTransactionAtomicity:
         client_id = client["client_id"]
         client_secret = client["client_secret"]
 
-        # Test authorization flow (simplified)
-        auth_data = {
+        # Test authorization flow (simplified) - GET request with query parameters
+        auth_params = {
             "client_id": client_id,
             "redirect_uri": "http://localhost:3000/callback",
-            "scopes": ["read"],
+            "scope": "profile email",  # Valid scopes from OAuth service
+            "response_type": "code",
         }
 
-        response = await async_client.post(
+        response = await async_client.get(
             "/api/v1/oauth/authorize",
-            json=auth_data,
+            params=auth_params,
             headers=user["headers"],
         )
 
         # The response might vary depending on implementation
         # This test mainly ensures the transaction handling doesn't break the flow
         assert response.status_code in [
-            status.HTTP_200_OK,
-            status.HTTP_302_FOUND,
+            status.HTTP_200_OK,  # Shows consent screen
+            status.HTTP_302_FOUND,  # Redirect response
             status.HTTP_201_CREATED,
         ]
 
@@ -352,7 +368,7 @@ class TestTransactionAtomicity:
             # Create organization
             org_data = {
                 "name": f"Test Org for {email}",
-                "slug": f"test-org-{email.split('@')[0]}",
+                "slug": f"test-org-{email.split('@')[0].replace('_', '-')}",
                 "description": "Test organization",
             }
 
@@ -380,7 +396,7 @@ class TestErrorHandlingWithTransactions:
     async def test_database_constraint_violations(self, async_client: AsyncClient):
         """Test handling of database constraint violations in transactions."""
         # Create user
-        user = await self.create_test_user(async_client, "user@test.com")
+        user = await self.create_test_user(async_client, make_unique_email("user@test.com"))
 
         # Create organization
         org_data = {
@@ -413,7 +429,7 @@ class TestErrorHandlingWithTransactions:
     async def test_service_errors_during_transactions(self, async_client: AsyncClient):
         """Test service-level errors during transaction operations."""
         # Create user
-        user = await self.create_test_user(async_client, "user@test.com")
+        user = await self.create_test_user(async_client, make_unique_email("user@test.com"))
 
         # Test invalid organization data
         invalid_org_data = {
