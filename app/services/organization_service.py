@@ -42,6 +42,8 @@ class OrganizationService:
                 name=name,
                 slug=slug,
                 description=description,
+                is_personal=False,
+                plan="free",
                 website=website,
                 email=email,
                 phone=phone,
@@ -61,7 +63,6 @@ class OrganizationService:
             self.db.add(membership)
             # atomic_operation handles commit/rollback
 
-        await self.db.refresh(organization)
         return organization
 
     async def get_organization_by_id(self, organization_id: int) -> Organization | None:

@@ -20,11 +20,7 @@ class TransactionManager:
 
     async def __aenter__(self):
         """Start transaction context."""
-        if self.db.in_transaction():
-            # Already in transaction, don't start a new one
-            self._in_transaction = False
-            return self
-
+        # Always manage the transaction to ensure commit
         self._in_transaction = True
         return self
 

@@ -22,12 +22,39 @@ from app.schemas.auth import (
     VerifyTokenResponse,
 )
 from app.schemas.common import BaseResponse
-from app.schemas.user import UserDetailResponse, UserResponse
+from app.schemas.user import UserCreate, UserDetailResponse, UserResponse
 from app.services.auth_service import AuthService
 from app.utils.device_detection import detect_client_type, get_device_info, should_use_cookies
 from app.utils.exceptions import AuthenticationError
 
 router = APIRouter()
+
+
+@router.post("/register", response_model=UserDetailResponse, status_code=status.HTTP_201_CREATED)
+async def register(
+    user_data: UserCreate,
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """Register a new user."""
+
+    user = await auth_service.register_user(
+        email=user_data.email,
+        password=user_data.password,
+        first_name=user_data.first_name,
+        last_name=user_data.last_name,
+        username=user_data.username,
+        middle_name=user_data.middle_name,
+        phone=user_data.phone,
+        timezone=user_data.timezone,
+        locale=user_data.locale,
+        bio=user_data.bio,
+    )
+
+    return UserDetailResponse(
+        success=True,
+        message="User registered successfully",
+        user=UserResponse.model_validate(user),
+    )
 
 
 @router.post("/login", response_model=LoginResponse)

@@ -8,6 +8,7 @@ from app.models.membership import Role
 from app.models.user import User
 
 from .base_policy import Action, BasePolicy, PolicyContext
+from .organization_policy import OrganizationPolicy
 from .resource_policy import ResourcePolicy
 from .session_policy import SessionPolicy
 from .user_policy import UserPolicy
@@ -15,6 +16,7 @@ from .user_policy import UserPolicy
 # Policy registry
 POLICY_REGISTRY = {
     "user": UserPolicy,
+    "organization": OrganizationPolicy,
     "session": SessionPolicy,
     "resource": ResourcePolicy,
 }

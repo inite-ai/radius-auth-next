@@ -14,6 +14,7 @@ from app.dependencies.services import get_organization_service
 from app.models.user import User
 from app.policies.base_policy import Action
 from app.schemas.organization import (
+    MemberAddRequest,
     MemberListResponse,
     MembershipResponse,
     OrganizationCreate,
@@ -87,8 +88,8 @@ async def create_organization(
 
 
 @router.get("/{organization_id}", response_model=OrganizationDetailResponse)
-@require_organization_permission(Action.READ)
 @validate_organization_exists()
+@require_organization_permission(Action.READ)
 async def get_organization(
     organization_id: int,
     current_user: User = Depends(get_current_active_user),
@@ -112,8 +113,8 @@ async def get_organization(
 
 
 @router.put("/{organization_id}", response_model=OrganizationUpdateResponse)
-@require_organization_permission(Action.UPDATE)
 @validate_organization_exists()
+@require_organization_permission(Action.UPDATE)
 async def update_organization(
     organization_id: int,
     org_update: OrganizationUpdate,
@@ -146,8 +147,8 @@ async def update_organization(
 
 
 @router.get("/{organization_id}/members", response_model=MemberListResponse)
-@require_organization_permission(Action.READ)
 @validate_organization_exists()
+@require_organization_permission(Action.READ)
 async def get_organization_members(
     organization_id: int,
     current_user: User = Depends(get_current_active_user),
@@ -184,3 +185,33 @@ async def get_organization_members(
         page=page,
         per_page=per_page,
     )
+
+
+@router.post("/{organization_id}/members", status_code=APIStatus.CREATED)
+@validate_organization_exists()
+@require_organization_permission(Action.MANAGE)
+async def add_organization_member(
+    organization_id: int,
+    member_request: MemberAddRequest,
+    current_user: User = Depends(get_current_active_user),
+    org_service: OrganizationService = Depends(get_organization_service),
+):
+    """Add a member to organization."""
+    from app.models.membership import Role
+
+    try:
+        membership = await org_service.add_member(
+            organization_id=organization_id,
+            user_id=member_request.user_id,
+            role=Role(member_request.role),
+        )
+        return ResponseBuilder.success(
+            "Member added successfully",
+            membership_id=membership.id,
+            user_id=membership.user_id,
+            role=membership.role,
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=APIStatus.CONFLICT, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=APIStatus.NOT_FOUND, detail=str(e))

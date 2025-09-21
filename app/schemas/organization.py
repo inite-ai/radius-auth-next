@@ -75,7 +75,7 @@ class OrganizationResponse(TimestampMixin):
     primary_color: str | None
     plan: str
     max_users: int | None
-    user_count: int
+    # user_count: int  # Removed due to async/sync issues
 
     class Config:
         from_attributes = True
@@ -90,7 +90,7 @@ class OrganizationSummary(BaseModel):
     description: str | None
     logo_url: str | None
     is_personal: bool
-    user_count: int
+    # user_count: int  # Removed due to async/sync issues
     created_at: datetime
 
     class Config:
@@ -170,6 +170,21 @@ class MemberInviteRequest(BaseModel):
     """Schema for inviting member to organization."""
 
     email: EmailStr = Field(..., description="Email to invite")
+    role: str = Field(..., description="Role to assign")
+
+    @validator("role")
+    def validate_role(cls, v):
+        from app.models.membership import Role
+
+        if v not in [role.value for role in Role]:
+            raise ValueError(f"Invalid role. Must be one of: {[role.value for role in Role]}")
+        return v
+
+
+class MemberAddRequest(BaseModel):
+    """Schema for adding existing user to organization."""
+
+    user_id: int = Field(..., description="User ID to add")
     role: str = Field(..., description="Role to assign")
 
     @validator("role")

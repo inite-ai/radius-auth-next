@@ -34,6 +34,58 @@ class AuthService:
         self.jwt_service = JWTService()
         self.session_service = SessionService(db)
 
+    async def register_user(
+        self,
+        email: str,
+        password: str,
+        first_name: str,
+        last_name: str,
+        username: str | None = None,
+        middle_name: str | None = None,
+        phone: str | None = None,
+        timezone: str | None = None,
+        locale: str | None = None,
+        bio: str | None = None,
+    ) -> User:
+        """Register a new user."""
+        from app.utils.exceptions import ValidationError
+
+        # Check if user already exists
+        result = await self.db.execute(select(User).where(User.email == email))
+        existing_user = result.scalar_one_or_none()
+
+        if existing_user:
+            raise ValidationError("User with this email already exists")
+
+        # Check username uniqueness if provided
+        if username:
+            result = await self.db.execute(select(User).where(User.username == username))
+            existing_username = result.scalar_one_or_none()
+
+            if existing_username:
+                raise ValidationError("Username already taken")
+
+        # Create new user
+        user = User(
+            email=email,
+            password_hash=hash_password(password),
+            first_name=first_name,
+            last_name=last_name,
+            username=username,
+            middle_name=middle_name,
+            phone=phone,
+            timezone=timezone,
+            locale=locale,
+            bio=bio,
+            is_verified=False,  # Users need to verify email
+        )
+
+        self.db.add(user)
+        await self.db.commit()
+        await self.db.refresh(user)
+
+        return user
+
     async def authenticate_user(
         self,
         email: str,

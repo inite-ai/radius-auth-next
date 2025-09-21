@@ -42,3 +42,21 @@ async def get_session_service(
 ) -> AsyncGenerator[SessionService, None]:
     """Get SessionService instance."""
     yield SessionService(db)
+
+
+async def get_organization_by_id(
+    organization_id: int,
+    org_service: OrganizationService = Depends(get_organization_service),
+):
+    """Get organization by ID."""
+    from fastapi import HTTPException
+
+    from app.constants.status_codes import APIStatus
+
+    organization = await org_service.get_organization_by_id(organization_id)
+    if not organization:
+        raise HTTPException(
+            status_code=APIStatus.NOT_FOUND,
+            detail="Organization not found",
+        )
+    return organization

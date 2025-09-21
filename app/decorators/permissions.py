@@ -35,7 +35,6 @@ def require_permission(
         async def wrapper(*args, **kwargs):
             # Extract dependencies from kwargs
             current_user = None
-            organization = None
             resource_id = None
 
             # Find current_user in kwargs
@@ -45,11 +44,16 @@ def require_permission(
                     break
 
             # Find organization if organization_dependent
+            organization_id = None
             if organization_dependent:
                 for _key, value in kwargs.items():
                     if isinstance(value, Organization):
-                        organization = value
+                        organization_id = value.id
                         break
+
+                # If no Organization object found, look for organization_id parameter
+                if organization_id is None:
+                    organization_id = kwargs.get("organization_id")
 
             # Find resource_id if specified
             if resource_id_param and resource_id_param in kwargs:
@@ -61,11 +65,15 @@ def require_permission(
                 action=action,
                 resource_type=resource_type,
                 resource_id=resource_id,
-                organization_id=organization.id if organization else None,
+                organization_id=organization_id,
             )
 
+            # Remove organization from kwargs before calling the original function
+            # to avoid unexpected keyword argument error
+            kwargs_for_func = {k: v for k, v in kwargs.items() if k != "organization"}
+
             # Call the original function
-            return await func(*args, **kwargs)
+            return await func(*args, **kwargs_for_func)
 
         return wrapper
 
@@ -168,7 +176,14 @@ def validate_organization_exists(org_id_param: str = "organization_id"):
 
                 raise NotFoundError("Organization not found")
 
-            return await func(*args, **kwargs)
+            # Add organization to kwargs for permission decorators
+            kwargs["organization"] = organization
+
+            # Remove organization from kwargs before calling the original function
+            # to avoid unexpected keyword argument error
+            kwargs_for_func = {k: v for k, v in kwargs.items() if k != "organization"}
+
+            return await func(*args, **kwargs_for_func)
 
         return wrapper
 

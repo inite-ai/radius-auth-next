@@ -10,9 +10,8 @@ from app.decorators.permissions import (
     require_user_permission,
     validate_user_exists,
 )
-from app.dependencies.auth import get_current_active_user, get_current_organization
+from app.dependencies.auth import get_current_active_user
 from app.dependencies.services import get_user_service
-from app.models.organization import Organization
 from app.models.user import User
 from app.policies.base_policy import Action
 from app.schemas.user import (
@@ -32,7 +31,7 @@ router = APIRouter()
 @require_create_permission("user")
 async def create_user(
     user_create: UserCreate,
-    organization: Organization | None = Depends(get_current_organization),
+    organization_id: int | None = Query(None, description="Organization ID"),
     current_user: User = Depends(get_current_active_user),
     user_service: UserService = Depends(get_user_service),
 ):
@@ -58,7 +57,7 @@ async def create_user(
 @router.get("/", response_model=UserListResponse)
 @require_read_permission("user")
 async def get_users(
-    organization: Organization | None = Depends(get_current_organization),
+    organization_id: int | None = Query(None, description="Organization ID"),
     current_user: User = Depends(get_current_active_user),
     user_service: UserService = Depends(get_user_service),
     page: int = Query(1, ge=1, description="Page number"),
@@ -69,7 +68,7 @@ async def get_users(
 
     skip = (page - 1) * per_page
     users, total = await user_service.get_users(
-        organization_id=organization.id if organization else None,
+        organization_id=organization_id,
         search=search,
         skip=skip,
         limit=per_page,
@@ -91,7 +90,7 @@ async def get_current_user_profile(
 @validate_user_exists()
 async def get_user(
     user_id: int,
-    organization: Organization | None = Depends(get_current_organization),
+    organization_id: int | None = Query(None, description="Organization ID"),
     current_user: User = Depends(get_current_active_user),
     user_service: UserService = Depends(get_user_service),
 ):
@@ -108,7 +107,7 @@ async def get_user(
 async def update_user(
     user_id: int,
     user_update: UserUpdate,
-    organization: Organization | None = Depends(get_current_organization),
+    organization_id: int | None = Query(None, description="Organization ID"),
     current_user: User = Depends(get_current_active_user),
     user_service: UserService = Depends(get_user_service),
 ):
@@ -124,7 +123,7 @@ async def update_user(
 @validate_user_exists()
 async def delete_user(
     user_id: int,
-    organization: Organization | None = Depends(get_current_organization),
+    organization_id: int | None = Query(None, description="Organization ID"),
     current_user: User = Depends(get_current_active_user),
     user_service: UserService = Depends(get_user_service),
 ):

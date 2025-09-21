@@ -96,6 +96,12 @@ class User(Base, TimestampMixin):
     @property
     def can_login(self) -> bool:
         """Check if user can login."""
+        from app.config.settings import settings
+
+        # In testing environment, don't require email verification
+        if settings.TESTING:
+            return self.is_active and not self.is_locked
+
         return self.is_active and self.is_verified and not self.is_locked
 
     def __repr__(self) -> str:

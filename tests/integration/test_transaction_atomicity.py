@@ -308,7 +308,7 @@ class TestTransactionAtomicity:
         assert login_response.status_code == status.HTTP_200_OK
 
         login_data = login_response.json()
-        access_token = login_data["access_token"]
+        access_token = login_data["tokens"]["access_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
         user_id = login_data["user"]["id"]
 
@@ -342,7 +342,7 @@ class TestTransactionAtomicity:
         assert login_response.status_code == status.HTTP_200_OK
 
         login_data = login_response.json()
-        access_token = login_data["access_token"]
+        access_token = login_data["tokens"]["access_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
         user_id = login_data["user"]["id"]
 
@@ -500,7 +500,7 @@ class TestErrorHandlingWithTransactions:
         assert login_response.status_code == status.HTTP_200_OK
 
         login_data = login_response.json()
-        access_token = login_data["access_token"]
+        access_token = login_data["tokens"]["access_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
         user_id = login_data["user"]["id"]
 

@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.membership import Membership
 from app.models.organization import Organization
@@ -33,7 +34,9 @@ async def get_current_user(
             payload = await auth_service.verify_access_token(credentials.credentials)
             user_id = int(payload["sub"])
 
-            result = await db.execute(select(User).where(User.id == user_id))
+            result = await db.execute(
+                select(User).options(selectinload(User.memberships)).where(User.id == user_id)
+            )
             user = result.scalar_one_or_none()
 
             if user and user.can_login:

@@ -25,6 +25,7 @@ class UserCreate(BaseModel):
     middle_name: str | None = Field(None, max_length=100, description="Middle name")
     username: str | None = Field(None, min_length=3, max_length=30, description="Username")
     phone: str | None = Field(None, description="Phone number")
+    avatar_url: str | None = Field(None, max_length=500, description="Profile avatar URL")
     timezone: str | None = Field(None, description="User timezone")
     locale: str | None = Field(None, description="User locale")
     bio: str | None = Field(None, max_length=1000, description="User biography")
@@ -98,6 +99,7 @@ class UserResponse(TimestampMixin):
     first_name: str
     last_name: str
     middle_name: str | None
+    full_name: str
     phone: str | None
     avatar_url: str | None
     timezone: str | None

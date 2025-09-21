@@ -79,7 +79,7 @@ class UserService:
 
         # Filter by organization if specified
         if organization_id:
-            query = query.join(Membership).where(
+            query = query.join(Membership, User.id == Membership.user_id).where(
                 Membership.organization_id == organization_id,
                 Membership.is_active,
             )
