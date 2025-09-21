@@ -208,25 +208,28 @@ class OAuthService:
             if not constant_time_compare(challenge, auth_code.code_challenge):
                 raise ValidationError("Invalid PKCE verifier")
 
-        # Mark code as used
-        auth_code.is_used = True
+        from app.utils.transaction_manager import atomic_operation
 
-        # Create access token
-        access_token = generate_random_string(64)
-        refresh_token = generate_random_string(64)
-        expires_at = datetime.utcnow() + timedelta(seconds=client.access_token_lifetime)
+        # Atomically mark code as used and create access token
+        async with atomic_operation(self.db):
+            # Mark code as used
+            auth_code.is_used = True
 
-        oauth_token = OAuthAccessToken(
-            client_id=client.client_id,
-            user_id=auth_code.user_id,
-            access_token=access_token,
-            refresh_token=refresh_token,
-            scopes=auth_code.scopes,
-            expires_at=expires_at,
-        )
+            # Create access token
+            access_token = generate_random_string(64)
+            refresh_token = generate_random_string(64)
+            expires_at = datetime.utcnow() + timedelta(seconds=client.access_token_lifetime)
 
-        self.db.add(oauth_token)
-        await self.db.commit()
+            oauth_token = OAuthAccessToken(
+                client_id=client.client_id,
+                user_id=auth_code.user_id,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                scopes=auth_code.scopes,
+                expires_at=expires_at,
+            )
+
+            self.db.add(oauth_token)
 
         return {
             "access_token": access_token,

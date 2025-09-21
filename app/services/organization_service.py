@@ -27,39 +27,41 @@ class OrganizationService:
         phone: str | None = None,
     ) -> Organization:
         """Create a new organization and assign owner role to user."""
+        from app.utils.transaction_manager import atomic_operation
 
-        # Check if slug is already taken
-        result = await self.db.execute(select(Organization).where(Organization.slug == slug))
-        existing_org = result.scalar_one_or_none()
+        async with atomic_operation(self.db):
+            # Check if slug is already taken
+            result = await self.db.execute(select(Organization).where(Organization.slug == slug))
+            existing_org = result.scalar_one_or_none()
 
-        if existing_org:
-            raise ValidationError("Organization slug already exists")
+            if existing_org:
+                raise ValidationError("Organization slug already exists")
 
-        # Create organization
-        organization = Organization(
-            name=name,
-            slug=slug,
-            description=description,
-            website=website,
-            email=email,
-            phone=phone,
-        )
+            # Create organization
+            organization = Organization(
+                name=name,
+                slug=slug,
+                description=description,
+                website=website,
+                email=email,
+                phone=phone,
+            )
 
-        self.db.add(organization)
-        await self.db.flush()  # Get the ID
+            self.db.add(organization)
+            await self.db.flush()  # Get the ID
 
-        # Create owner membership for user
-        membership = Membership(
-            user_id=user_id,
-            organization_id=organization.id,
-            role=Role.OWNER,
-            is_active=True,
-        )
+            # Create owner membership for user
+            membership = Membership(
+                user_id=user_id,
+                organization_id=organization.id,
+                role=Role.OWNER,
+                is_active=True,
+            )
 
-        self.db.add(membership)
-        await self.db.commit()
+            self.db.add(membership)
+            # atomic_operation handles commit/rollback
+
         await self.db.refresh(organization)
-
         return organization
 
     async def get_organization_by_id(self, organization_id: int) -> Organization | None:

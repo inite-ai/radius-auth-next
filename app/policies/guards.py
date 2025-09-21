@@ -9,11 +9,13 @@ from app.models.user import User
 
 from .base_policy import Action, BasePolicy, PolicyContext
 from .resource_policy import ResourcePolicy
+from .session_policy import SessionPolicy
 from .user_policy import UserPolicy
 
 # Policy registry
 POLICY_REGISTRY = {
     "user": UserPolicy,
+    "session": SessionPolicy,
     "resource": ResourcePolicy,
 }
 

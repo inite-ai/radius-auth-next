@@ -1,10 +1,11 @@
 """Session management routes."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.constants.status_codes import APIStatus
+from app.decorators.permissions import require_delete_permission, require_read_permission
 from app.dependencies.auth import get_current_active_user
-from app.dependencies.database import get_db
+from app.dependencies.services import get_session_service
 from app.models.user import User
 from app.schemas.session import (
     RevokeOtherSessionsRequest,
@@ -14,19 +15,19 @@ from app.schemas.session import (
     SessionStatsResponse,
 )
 from app.services.session_service import SessionService
+from app.utils.response_builders import ResponseBuilder
 
 router = APIRouter()
 
 
 @router.get("/", response_model=SessionListResponse)
+@require_read_permission("session")
 async def get_user_sessions(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    session_service: SessionService = Depends(get_session_service),
     include_revoked: bool = Query(False, description="Include revoked sessions"),
 ):
     """Get current user's sessions."""
-
-    session_service = SessionService(db)
     sessions = await session_service.get_user_sessions(
         user_id=current_user.id,
         include_revoked=include_revoked,
@@ -61,66 +62,56 @@ async def get_user_sessions(
 
 
 @router.delete("/other")
+@require_delete_permission("session")
 async def revoke_other_sessions(
     revoke_request: RevokeOtherSessionsRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    session_service: SessionService = Depends(get_session_service),
 ):
     """Revoke all other sessions except current one."""
-
-    session_service = SessionService(db)
     revoked_count = await session_service.revoke_other_sessions(
         user_id=current_user.id,
         current_session_id=revoke_request.current_session_id,
     )
 
-    return {
-        "success": True,
-        "message": f"Revoked {revoked_count} sessions",
-        "revoked_sessions": revoked_count,
-    }
+    return ResponseBuilder.sessions_revoked(revoked_count)
 
 
 @router.delete("/{session_id}")
+@require_delete_permission("session")
 async def revoke_session(
     session_id: str,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    session_service: SessionService = Depends(get_session_service),
 ):
     """Revoke a specific session."""
-
-    session_service = SessionService(db)
     session = await session_service.get_session_by_session_id(session_id)
 
     if not session:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=APIStatus.NOT_FOUND,
             detail="Session not found",
         )
 
     # Check if session belongs to current user
     if session.user_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=APIStatus.FORBIDDEN,
             detail="Access denied",
         )
 
     await session_service.revoke_session(session)
 
-    return {
-        "success": True,
-        "message": "Session revoked successfully",
-    }
+    return ResponseBuilder.session_revoked()
 
 
 @router.get("/stats", response_model=SessionStatsResponse)
+@require_read_permission("session")
 async def get_session_stats(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    session_service: SessionService = Depends(get_session_service),
 ):
     """Get session statistics for current user."""
-
-    session_service = SessionService(db)
     stats_data = await session_service.get_session_stats(current_user.id)
 
     return SessionStatsResponse(

@@ -2,10 +2,9 @@
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_active_user
-from app.dependencies.database import get_db
+from app.dependencies.services import get_oauth_service
 from app.models.user import User
 from app.schemas.common import BaseResponse
 from app.schemas.oauth import (
@@ -29,11 +28,9 @@ router = APIRouter()
 async def create_oauth_client(
     request: OAuthClientCreateRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    oauth_service: OAuthService = Depends(get_oauth_service),
 ):
     """Create OAuth client application."""
-
-    oauth_service = OAuthService(db)
 
     try:
         client, client_secret = await oauth_service.create_client(
@@ -71,11 +68,9 @@ async def create_oauth_client(
 @router.get("/clients", response_model=OAuthClientListResponse)
 async def list_oauth_clients(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    oauth_service: OAuthService = Depends(get_oauth_service),
 ):
     """List user's OAuth clients."""
-
-    oauth_service = OAuthService(db)
     clients = await oauth_service.list_user_clients(current_user.id)
 
     from app.schemas.oauth import OAuthClientResponse
@@ -104,11 +99,9 @@ async def list_oauth_clients(
 async def delete_oauth_client(
     client_id: str,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    oauth_service: OAuthService = Depends(get_oauth_service),
 ):
     """Delete OAuth client."""
-
-    oauth_service = OAuthService(db)
 
     deleted = await oauth_service.delete_user_client(current_user.id, client_id)
 
@@ -137,7 +130,7 @@ async def authorize(
     code_challenge: str | None = Query(None, description="PKCE code challenge"),
     code_challenge_method: str = Query("S256", description="PKCE method"),
     current_user: User | None = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    oauth_service: OAuthService = Depends(get_oauth_service),
 ):
     """
     OAuth authorization endpoint.
@@ -145,8 +138,6 @@ async def authorize(
     If user is logged in, shows consent screen.
     If not logged in, redirects to login.
     """
-
-    oauth_service = OAuthService(db)
 
     # Validate client
     client = await oauth_service.get_client(client_id)
@@ -251,11 +242,9 @@ async def authorize_post(
     code_challenge: str | None = Form(None),
     code_challenge_method: str = Form("S256"),
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    oauth_service: OAuthService = Depends(get_oauth_service),
 ):
     """Handle authorization consent."""
-
-    oauth_service = OAuthService(db)
 
     # Get client
     client = await oauth_service.get_client(client_id)
@@ -317,11 +306,9 @@ async def token(
     redirect_uri: str | None = Form(None),
     refresh_token: str | None = Form(None),
     code_verifier: str | None = Form(None),
-    db: AsyncSession = Depends(get_db),
+    oauth_service: OAuthService = Depends(get_oauth_service),
 ):
     """OAuth token endpoint."""
-
-    oauth_service = OAuthService(db)
 
     try:
         # Authenticate client
@@ -371,7 +358,7 @@ async def token(
 @router.get("/userinfo", response_model=OAuthUserInfoResponse)
 async def userinfo(
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    oauth_service: OAuthService = Depends(get_oauth_service),
 ):
     """OAuth userinfo endpoint."""
 
@@ -384,8 +371,6 @@ async def userinfo(
         )
 
     access_token = auth_header[7:]  # Remove "Bearer "
-
-    oauth_service = OAuthService(db)
     token_user = await oauth_service.validate_access_token(access_token)
 
     if not token_user:
@@ -423,11 +408,9 @@ async def revoke(
     token: str = Form(...),
     client_id: str = Form(...),
     client_secret: str | None = Form(None),
-    db: AsyncSession = Depends(get_db),
+    oauth_service: OAuthService = Depends(get_oauth_service),
 ):
     """OAuth token revocation endpoint."""
-
-    oauth_service = OAuthService(db)
 
     # Authenticate client (optional for public clients)
     if client_secret:

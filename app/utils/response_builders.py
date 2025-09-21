@@ -39,7 +39,11 @@ class ResponseBuilder:
 
     @staticmethod
     def user_list(
-        users: list[User], total: int, message: str = "Users retrieved successfully"
+        users: list[User],
+        total: int,
+        page: int = 1,
+        per_page: int = 20,
+        message: str = "Users retrieved successfully",
     ) -> UserListResponse:
         """Build user list response."""
         return UserListResponse(
@@ -47,6 +51,8 @@ class ResponseBuilder:
             message=message,
             users=[UserResponse.model_validate(user) for user in users],
             total=total,
+            page=page,
+            per_page=per_page,
         )
 
     @staticmethod
@@ -151,6 +157,16 @@ class ResponseBuilder:
     def resource_deactivated(resource_type: str) -> BaseResponse:
         """Build resource deactivation response."""
         return ResponseBuilder.success(f"{resource_type.title()} deactivated successfully")
+
+    @staticmethod
+    def sessions_revoked(count: int) -> BaseResponse:
+        """Build sessions revoked response."""
+        return ResponseBuilder.success(f"Revoked {count} sessions", revoked_sessions=count)
+
+    @staticmethod
+    def session_revoked() -> BaseResponse:
+        """Build single session revoked response."""
+        return ResponseBuilder.success("Session revoked successfully")
 
 
 # Convenience functions for common patterns

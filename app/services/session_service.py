@@ -160,9 +160,11 @@ class SessionService:
     # Removed: old revoke_all_user_sessions method - see line 279 for new implementation
 
     async def revoke_other_sessions(self, user_id: int, current_session_id: str) -> int:
-        """Revoke all sessions for user except current one."""
+        """Revoke all sessions for user except current one using bulk update."""
+        # Use bulk update for better performance and atomicity
         result = await self.db.execute(
-            select(Session).where(
+            update(Session)
+            .where(
                 and_(
                     Session.user_id == user_id,
                     Session.session_id != current_session_id,
@@ -170,14 +172,16 @@ class SessionService:
                     Session.is_revoked == False,
                 )
             )
+            .values(
+                is_active=False,
+                is_revoked=True,
+            )
         )
-        sessions = result.scalars().all()
 
-        for session in sessions:
-            session.revoke()
-
+        # Always commit for this method - it's a standalone operation
         await self.db.commit()
-        return len(sessions)
+
+        return result.rowcount
 
     async def get_user_sessions(
         self,

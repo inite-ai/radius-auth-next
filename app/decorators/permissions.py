@@ -110,28 +110,25 @@ def validate_user_exists(user_id_param: str = "user_id"):
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
-            from sqlalchemy.ext.asyncio import AsyncSession
-
             from app.services.user_service import UserService
 
-            # Find database session
-            db = None
+            # Find user service in kwargs
+            user_service = None
             for value in kwargs.values():
-                if isinstance(value, AsyncSession):
-                    db = value
+                if isinstance(value, UserService):
+                    user_service = value
                     break
 
-            if not db:
-                raise ValueError("No database session found in function arguments")
+            if not user_service:
+                raise ValueError("No UserService found in function arguments")
 
             # Get user_id from kwargs
             user_id = kwargs.get(user_id_param)
             if not user_id:
                 raise ValueError(f"Parameter '{user_id_param}' not found")
 
-            # Validate user exists
-            user_service = UserService(db)
-            await user_service.get_user_by_id(user_id)  # Will raise NotFoundError if not exists
+            # Validate user exists (will raise NotFoundError if not exists)
+            await user_service.get_user_by_id(user_id)
 
             return await func(*args, **kwargs)
 
@@ -147,27 +144,24 @@ def validate_organization_exists(org_id_param: str = "organization_id"):
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
-            from sqlalchemy.ext.asyncio import AsyncSession
-
             from app.services.organization_service import OrganizationService
 
-            # Find database session
-            db = None
+            # Find organization service in kwargs
+            org_service = None
             for value in kwargs.values():
-                if isinstance(value, AsyncSession):
-                    db = value
+                if isinstance(value, OrganizationService):
+                    org_service = value
                     break
 
-            if not db:
-                raise ValueError("No database session found in function arguments")
+            if not org_service:
+                raise ValueError("No OrganizationService found in function arguments")
 
             # Get organization_id from kwargs
             org_id = kwargs.get(org_id_param)
             if not org_id:
                 raise ValueError(f"Parameter '{org_id_param}' not found")
 
-            # Validate organization exists
-            org_service = OrganizationService(db)
+            # Validate organization exists (will raise NotFoundError if not exists)
             organization = await org_service.get_organization_by_id(org_id)
             if not organization:
                 from app.utils.exceptions import NotFoundError

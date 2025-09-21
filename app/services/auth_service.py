@@ -112,25 +112,24 @@ class AuthService:
     ) -> tuple[str, APIKey]:
         """Create a new API key for user."""
 
-        from app.utils.security import generate_api_key
+        from app.utils.security import create_expiration_time, generate_api_key, hash_token
 
         # Generate API key
-        api_key, prefix, key_hash = generate_api_key()
+        api_key = generate_api_key(prefix="pauth", length=32)
+        key_hash = hash_token(api_key)
 
         # Set expiration if provided
         expires_at = None
         if expires_days:
-            from app.utils.security import get_expiry_date
-
-            expires_at = get_expiry_date(expires_days)
+            expires_at = create_expiration_time(days=expires_days)
 
         # Create API key record
         api_key_obj = APIKey(
             user_id=user_id,
             name=name,
-            prefix=prefix,
+            prefix=api_key.split("_")[0],
             key_hash=key_hash,
-            scopes=scopes,
+            scopes_list=scopes or [],
             expires_at=expires_at,
         )
 
@@ -260,6 +259,7 @@ class AuthService:
             user_id=session.user.id,
             email=session.user.email,
             organization_id=organization_id,
+            session_id=new_session.id,
         )
 
         # Update session activity
@@ -334,6 +334,8 @@ class AuthService:
 
     async def reset_password(self, token: str, new_password: str) -> None:
         """Reset user password with token."""
+        from app.utils.transaction_manager import atomic_operation
+
         try:
             payload = self.jwt_service.decode_token(token)
             if payload.get("type") != "password_reset":
@@ -345,31 +347,32 @@ class AuthService:
         except Exception as e:
             raise InvalidTokenError(f"Invalid reset token: {e}")
 
-        # Get user and verify token
-        result = await self.db.execute(select(User).where(User.id == user_id, User.email == email))
-        user = result.scalar_one_or_none()
+        async with atomic_operation(self.db):
+            # Get user and verify token
+            result = await self.db.execute(
+                select(User).where(User.id == user_id, User.email == email)
+            )
+            user = result.scalar_one_or_none()
 
-        if not user or not user.reset_token:
-            raise InvalidTokenError("Invalid or expired token")
+            if not user or not user.reset_token:
+                raise InvalidTokenError("Invalid or expired token")
 
-        # Verify stored token hash
-        if not hash_token(token) == user.reset_token:
-            raise InvalidTokenError("Invalid token")
+            # Verify stored token hash
+            if not hash_token(token) == user.reset_token:
+                raise InvalidTokenError("Invalid token")
 
-        # Check expiration
-        if user.reset_token_expires_at and user.reset_token_expires_at < datetime.utcnow():
-            raise InvalidTokenError("Token expired")
+            # Check expiration
+            if user.reset_token_expires_at and user.reset_token_expires_at < datetime.utcnow():
+                raise InvalidTokenError("Token expired")
 
-        # Update password
-        user.password_hash = hash_password(new_password)
-        user.password_changed_at = datetime.utcnow()
-        user.reset_token = None
-        user.reset_token_expires_at = None
+            # Update password atomically with session revocation
+            user.password_hash = hash_password(new_password)
+            user.password_changed_at = datetime.utcnow()
+            user.reset_token = None
+            user.reset_token_expires_at = None
 
-        # Revoke all sessions (force re-login)
-        await self.session_service.revoke_all_user_sessions(user.id)
-
-        await self.db.commit()
+            # Revoke all sessions (force re-login) - part of the same transaction
+            await self.session_service.revoke_all_user_sessions(user.id)
 
     async def _handle_failed_login(self, user: User) -> None:
         """Handle failed login attempt."""

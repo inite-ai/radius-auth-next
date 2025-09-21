@@ -1,21 +1,24 @@
 """Organization management routes."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.constants.status_codes import APIStatus
+from app.decorators.permissions import (
+    require_create_permission,
+    require_organization_permission,
+    require_read_permission,
+    validate_organization_exists,
+)
 from app.dependencies.auth import get_current_active_user
-from app.dependencies.database import get_db
-from app.models.membership import Role
+from app.dependencies.services import get_organization_service
 from app.models.user import User
 from app.policies.base_policy import Action
-from app.policies.guards import require
 from app.schemas.organization import (
     MemberListResponse,
     MembershipResponse,
     OrganizationCreate,
     OrganizationDetailResponse,
     OrganizationListResponse,
-    OrganizationResponse,
     OrganizationUpdate,
     OrganizationUpdateResponse,
     OrganizationWithRole,
@@ -23,20 +26,20 @@ from app.schemas.organization import (
 from app.schemas.user import UserResponse
 from app.services.organization_service import OrganizationService
 from app.utils.exceptions import NotFoundError, ValidationError
+from app.utils.response_builders import ResponseBuilder
 
 router = APIRouter()
 
 
 @router.get("/", response_model=OrganizationListResponse)
+@require_read_permission("organization")
 async def get_organizations(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    org_service: OrganizationService = Depends(get_organization_service),
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
 ):
     """Get organizations user has access to."""
-
-    org_service = OrganizationService(db)
     org_memberships, total = await org_service.get_user_organizations(
         user_id=current_user.id,
         page=page,
@@ -52,23 +55,17 @@ async def get_organizations(
         for org, membership in org_memberships
     ]
 
-    return OrganizationListResponse(
-        success=True,
-        message="Organizations retrieved successfully",
-        organizations=organizations_with_roles,
-        total=total,
-    )
+    return ResponseBuilder.organization_list(organizations_with_roles, total)
 
 
-@router.post("/", response_model=OrganizationDetailResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=OrganizationDetailResponse, status_code=APIStatus.CREATED)
+@require_create_permission("organization")
 async def create_organization(
     org_create: OrganizationCreate,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    org_service: OrganizationService = Depends(get_organization_service),
 ):
     """Create new organization."""
-
-    org_service = OrganizationService(db)
 
     try:
         organization = await org_service.create_organization(
@@ -81,42 +78,28 @@ async def create_organization(
             phone=org_create.phone,
         )
 
-        return OrganizationDetailResponse(
-            success=True,
-            message="Organization created successfully",
-            organization=OrganizationResponse.model_validate(organization),
-            user_role=Role.OWNER,
-        )
+        return ResponseBuilder.organization_created(organization, "owner")
     except ValidationError as e:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=APIStatus.CONFLICT,
             detail=str(e),
         )
 
 
 @router.get("/{organization_id}", response_model=OrganizationDetailResponse)
+@require_organization_permission(Action.READ)
+@validate_organization_exists()
 async def get_organization(
     organization_id: int,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    org_service: OrganizationService = Depends(get_organization_service),
 ):
     """Get organization details."""
-
-    # Check permissions
-    require(
-        user=current_user,
-        action=Action.READ,
-        resource_type="organization",
-        resource_id=organization_id,
-        organization_id=organization_id,
-    )
-
-    org_service = OrganizationService(db)
 
     organization = await org_service.get_organization_by_id(organization_id)
     if not organization:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=APIStatus.NOT_FOUND,
             detail="Organization not found",
         )
 
@@ -125,33 +108,19 @@ async def get_organization(
         organization_id=organization_id,
     )
 
-    return OrganizationDetailResponse(
-        success=True,
-        message="Organization retrieved successfully",
-        organization=OrganizationResponse.model_validate(organization),
-        user_role=user_role,
-    )
+    return ResponseBuilder.organization_detail(organization, user_role)
 
 
 @router.put("/{organization_id}", response_model=OrganizationUpdateResponse)
+@require_organization_permission(Action.UPDATE)
+@validate_organization_exists()
 async def update_organization(
     organization_id: int,
     org_update: OrganizationUpdate,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    org_service: OrganizationService = Depends(get_organization_service),
 ):
     """Update organization."""
-
-    # Check permissions
-    require(
-        user=current_user,
-        action=Action.UPDATE,
-        resource_type="organization",
-        resource_id=organization_id,
-        organization_id=organization_id,
-    )
-
-    org_service = OrganizationService(db)
 
     try:
         update_data = org_update.dict(exclude_unset=True)
@@ -171,31 +140,22 @@ async def update_organization(
         )
     except NotFoundError:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=APIStatus.NOT_FOUND,
             detail="Organization not found",
         )
 
 
 @router.get("/{organization_id}/members", response_model=MemberListResponse)
+@require_organization_permission(Action.READ)
+@validate_organization_exists()
 async def get_organization_members(
     organization_id: int,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    org_service: OrganizationService = Depends(get_organization_service),
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
 ):
     """Get organization members."""
-
-    # Check permissions
-    require(
-        user=current_user,
-        action=Action.READ,
-        resource_type="organization",
-        resource_id=organization_id,
-        organization_id=organization_id,
-    )
-
-    org_service = OrganizationService(db)
     user_memberships, total = await org_service.get_organization_members(
         organization_id=organization_id,
         page=page,

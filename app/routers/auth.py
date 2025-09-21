@@ -2,10 +2,9 @@
 
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_active_user, get_optional_current_user
-from app.dependencies.database import get_db
+from app.dependencies.services import get_auth_service
 from app.models.user import User
 from app.schemas.auth import (
     APIKeyCreateRequest,
@@ -36,7 +35,7 @@ async def login(
     login_data: LoginRequest,
     request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     """
     Universal login endpoint with client-type detection.
@@ -45,8 +44,6 @@ async def login(
     - Mobile clients: Returns JWT tokens only (no cookies)
     - API clients: Returns JWT tokens with longer expiration
     """
-
-    auth_service = AuthService(db)
 
     try:
         # Detect client type
@@ -132,11 +129,9 @@ async def login(
 @router.post("/refresh", response_model=RefreshTokenResponse)
 async def refresh_tokens(
     refresh_data: RefreshTokenRequest,
-    db: AsyncSession = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     """Refresh access token using refresh token."""
-
-    auth_service = AuthService(db)
 
     try:
         tokens = await auth_service.refresh_tokens(
@@ -163,11 +158,9 @@ async def logout(
     response: Response,
     refresh_token: str | None = None,
     current_user: User | None = Depends(get_optional_current_user),
-    db: AsyncSession = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     """Logout user by revoking session."""
-
-    auth_service = AuthService(db)
     from app.config.settings import settings
 
     # Try to get refresh token from cookie if not provided
@@ -211,11 +204,9 @@ async def logout(
 @router.post("/logout-all", response_model=LogoutResponse)
 async def logout_all_sessions(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     """Logout user from all sessions."""
-
-    auth_service = AuthService(db)
 
     revoked_count = await auth_service.logout_all_sessions(current_user.id)
 
@@ -229,11 +220,9 @@ async def logout_all_sessions(
 @router.post("/password-reset/request", response_model=BaseResponse)
 async def request_password_reset(
     reset_request: PasswordResetRequest,
-    db: AsyncSession = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     """Request password reset token."""
-
-    auth_service = AuthService(db)
 
     # Always return success to avoid email enumeration
     await auth_service.create_password_reset_token(reset_request.email)
@@ -247,11 +236,9 @@ async def request_password_reset(
 @router.post("/password-reset/confirm", response_model=BaseResponse)
 async def confirm_password_reset(
     reset_confirm: PasswordResetConfirmRequest,
-    db: AsyncSession = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     """Confirm password reset with token."""
-
-    auth_service = AuthService(db)
 
     try:
         await auth_service.reset_password(reset_confirm.token, reset_confirm.new_password)
@@ -305,7 +292,7 @@ async def verify_token(
 async def create_api_key(
     request: APIKeyCreateRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     """
     Create API key for machine-to-machine authentication.
@@ -313,32 +300,15 @@ async def create_api_key(
     API keys have format: pauth_xxx... and are stored as hashes.
     """
 
-    from app.models.api_key import APIKey
     from app.schemas.auth import APIKeyResponse
-    from app.utils.security import create_expiration_time, generate_api_key, hash_token
 
-    # Generate API key
-    api_key = generate_api_key(prefix="pauth", length=32)
-    key_hash = hash_token(api_key)
-
-    # Set expiration
-    expires_at = None
-    if request.expires_days:
-        expires_at = create_expiration_time(days=request.expires_days)
-
-    # Create API key record
-    api_key_record = APIKey(
+    # Use auth service to create the API key
+    api_key, api_key_record = await auth_service.create_api_key(
         user_id=current_user.id,
         name=request.name,
-        key_hash=key_hash,
-        prefix=api_key.split("_")[0],
-        scopes_list=request.scopes or [],
-        expires_at=expires_at,
+        scopes=request.scopes,
+        expires_days=request.expires_days,
     )
-
-    db.add(api_key_record)
-    await db.commit()
-    await db.refresh(api_key_record)
 
     key_info = APIKeyResponse(
         id=api_key_record.id,
@@ -364,11 +334,9 @@ async def create_api_key(
 @router.get("/api-keys", response_model=APIKeyListResponse)
 async def list_api_keys(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     """List user's API keys (without the actual keys)."""
-
-    auth_service = AuthService(db)
     api_keys = await auth_service.list_api_keys(current_user.id)
 
     from app.schemas.auth import APIKeyResponse
@@ -399,11 +367,9 @@ async def list_api_keys(
 async def revoke_api_key(
     key_id: int,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     """Revoke an API key."""
-
-    auth_service = AuthService(db)
 
     revoked = await auth_service.revoke_api_key(current_user.id, key_id)
 

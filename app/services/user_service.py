@@ -142,34 +142,32 @@ class UserService:
         return True
 
     async def change_password(self, user_id: int, current_password: str, new_password: str) -> User:
-        """Change user password with verification."""
+        """Change user password with verification and revoke all sessions atomically."""
 
         from datetime import datetime
 
-        from app.utils.security import verify_password
+        from app.utils.security import hash_password, verify_password
+        from app.utils.transaction_manager import atomic_operation
 
-        user = await self.get_user_by_id(user_id)
+        async with atomic_operation(self.db):
+            user = await self.get_user_by_id(user_id)
 
-        # Verify current password
-        if not verify_password(current_password, user.password_hash):
-            raise ValidationError("Current password is incorrect")
+            # Verify current password
+            if not verify_password(current_password, user.password_hash):
+                raise ValidationError("Current password is incorrect")
 
-        # Update password
-        user.password_hash = hash_password(new_password)
-        user.password_changed_at = datetime.utcnow()
+            # Update password
+            user.password_hash = hash_password(new_password)
+            user.password_changed_at = datetime.utcnow()
 
-        await self.db.commit()
+            # Revoke all sessions as part of the same transaction for security
+            from app.services.session_service import SessionService
+
+            session_service = SessionService(self.db)
+            await session_service.revoke_all_user_sessions(user_id)
+
         await self.db.refresh(user)
-
         return user
-
-    async def revoke_all_user_sessions_on_password_change(self, user_id: int) -> None:
-        """Revoke all user sessions after password change for security."""
-
-        from app.services.session_service import SessionService
-
-        session_service = SessionService(self.db)
-        await session_service.revoke_all_user_sessions(user_id)
 
     async def verify_email(self, user_id: int) -> User:
         """Verify user email."""
