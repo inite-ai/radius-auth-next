@@ -42,7 +42,15 @@ Modern authorization service built with FastAPI, Pydantic, and PostgreSQL.
 cd platform-authorization-next
 python -m venv venv
 source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-pip install -r requirements.txt
+
+# Production dependencies
+pip install -e .
+
+# Development dependencies (includes linting, testing, etc.)
+pip install -e ".[dev]"
+
+# Or use make commands
+make install-dev
 ```
 
 2. **Environment Configuration:**
@@ -235,14 +243,32 @@ alembic downgrade -1
 ```
 
 ### Code Quality
-```bash
-# Linting and formatting
-ruff check app/
-ruff format app/
 
-# Type checking
-mypy app/
+Modern development workflow with automated checks:
+
+```bash
+# Install pre-commit hooks (runs on every commit)
+pre-commit install
+
+# Format and lint code
+make format
+make lint
+
+# Run all checks
+make lint
+
+# Individual tools
+ruff check app/          # Fast Python linter
+black .                  # Code formatter
+mypy app/               # Type checker
+bandit -r app/          # Security linter
 ```
+
+**Pre-commit hooks automatically:**
+- Format code with Ruff and Black
+- Check trailing whitespace and file endings
+- Validate YAML/JSON/TOML files
+- Block commits with linting errors
 
 ## Contributing
 

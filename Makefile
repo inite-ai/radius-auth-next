@@ -23,6 +23,14 @@ install:
 install-dev:
 	pip install -e ".[dev]"
 
+# For production deployment (creates wheel)
+build:
+	python -m build
+
+# Install from built wheel
+install-prod:
+	pip install dist/*.whl
+
 # Testing
 test:
 	pytest -v --tb=short
