@@ -141,21 +141,35 @@ class UserService:
         await self.db.commit()
         return True
 
-    async def change_password(self, user_id: int, new_password: str) -> User:
-        """Change user password."""
+    async def change_password(self, user_id: int, current_password: str, new_password: str) -> User:
+        """Change user password with verification."""
 
-        user = await self.get_user_by_id(user_id)
-        user.password_hash = hash_password(new_password)
-
-        # Update password changed timestamp
         from datetime import datetime
 
+        from app.utils.security import verify_password
+
+        user = await self.get_user_by_id(user_id)
+
+        # Verify current password
+        if not verify_password(current_password, user.password_hash):
+            raise ValidationError("Current password is incorrect")
+
+        # Update password
+        user.password_hash = hash_password(new_password)
         user.password_changed_at = datetime.utcnow()
 
         await self.db.commit()
         await self.db.refresh(user)
 
         return user
+
+    async def revoke_all_user_sessions_on_password_change(self, user_id: int) -> None:
+        """Revoke all user sessions after password change for security."""
+
+        from app.services.session_service import SessionService
+
+        session_service = SessionService(self.db)
+        await session_service.revoke_all_user_sessions(user_id)
 
     async def verify_email(self, user_id: int) -> User:
         """Verify user email."""

@@ -443,7 +443,7 @@ class TestBrowserSecurity:
 
         assert response.status_code == 401
         data = response.json()
-        assert "locked" in data["detail"].lower()
+        assert "locked" in data["message"].lower()
 
     @pytest.mark.asyncio
     async def test_session_hijacking_protection(self, async_client: AsyncClient, create_test_user):

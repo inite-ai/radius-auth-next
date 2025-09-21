@@ -1,11 +1,11 @@
-"""Middleware modules."""
+"""Middleware package."""
 
-from .auth_middleware import AuthMiddleware
-from .csrf_middleware import CSRFMiddleware
-from .rate_limit import RateLimitMiddleware
+from .exception_handler import ExceptionHandlers, register_exception_handlers
+from .logging_middleware import PerformanceMiddleware, RequestLoggingMiddleware
 
 __all__ = [
-    "AuthMiddleware",
-    "CSRFMiddleware",
-    "RateLimitMiddleware",
+    "ExceptionHandlers",
+    "register_exception_handlers",
+    "RequestLoggingMiddleware",
+    "PerformanceMiddleware",
 ]

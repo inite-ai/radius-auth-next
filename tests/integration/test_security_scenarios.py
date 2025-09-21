@@ -449,7 +449,7 @@ class TestPasswordSecurity:
             )
 
             if response.status_code == 401:
-                detail = response.json().get("detail", "")
+                detail = response.json().get("message", "")
                 if "locked" in detail.lower():
                     locked_out = True
                     break
@@ -545,7 +545,7 @@ class TestInputValidationSecurity:
 
         # Should fail safely (not crash or expose SQL errors)
         assert response.status_code in [401, 422]  # 422 = validation error, 401 = auth error
-        assert "SQL" not in response.json().get("detail", "")
+        assert "SQL" not in response.json().get("message", "")
 
     @pytest.mark.asyncio
     async def test_xss_prevention_in_error_messages(self, async_client: AsyncClient):
@@ -563,7 +563,7 @@ class TestInputValidationSecurity:
 
         # Error message should not contain unescaped script tags
         assert response.status_code in [401, 422]  # 422 = validation error, 401 = auth error
-        detail = response.json().get("detail", "")
+        detail = response.json().get("message", "")
         assert "<script>" not in detail
 
     @pytest.mark.asyncio

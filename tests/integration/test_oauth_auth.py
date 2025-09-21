@@ -114,7 +114,7 @@ class TestOAuthClientManagement:
         )
 
         assert response.status_code == 400
-        assert "Invalid scopes" in response.json()["detail"]
+        assert "Invalid scopes" in response.json()["message"]
 
 
 @pytest.mark.integration
@@ -192,7 +192,7 @@ class TestOAuthAuthorizationFlow:
         )
 
         assert response.status_code == 400
-        assert "Invalid client_id" in response.json()["detail"]
+        assert "Invalid client_id" in response.json()["message"]
 
     @pytest.mark.asyncio
     async def test_oauth_authorization_invalid_redirect_uri(
@@ -212,7 +212,7 @@ class TestOAuthAuthorizationFlow:
         )
 
         assert response.status_code == 400
-        assert "Invalid redirect_uri" in response.json()["detail"]
+        assert "Invalid redirect_uri" in response.json()["message"]
 
     @pytest.mark.asyncio
     async def test_oauth_authorization_consent_allow(
@@ -546,7 +546,7 @@ class TestOAuthSecurity:
         )
 
         assert response.status_code == 400
-        assert "expired" in response.json()["detail"].lower()
+        assert "expired" in response.json()["message"].lower()
 
     @pytest.mark.asyncio
     async def test_scope_validation(
@@ -567,7 +567,7 @@ class TestOAuthSecurity:
         )
 
         assert response.status_code == 400
-        assert "Invalid scopes" in response.json()["detail"]
+        assert "Invalid scopes" in response.json()["message"]
 
     @pytest.mark.asyncio
     async def test_client_authentication(self, async_client: AsyncClient, create_oauth_client):
@@ -586,7 +586,7 @@ class TestOAuthSecurity:
         )
 
         assert response.status_code == 400
-        assert "Invalid client" in response.json()["detail"]
+        assert "Invalid client" in response.json()["message"]
 
 
 @pytest.mark.integration
