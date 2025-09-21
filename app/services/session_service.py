@@ -96,6 +96,22 @@ class SessionService:
         session = result.scalar_one_or_none()
         return session
 
+    async def get_session_by_session_id(self, session_id: str) -> Session | None:
+        """Get session by session_id (UUID string)."""
+        result = await self.db.execute(
+            select(Session)
+            .options(selectinload(Session.user))
+            .where(
+                and_(
+                    Session.session_id == session_id,
+                    Session.is_active == True,
+                    Session.is_revoked == False,
+                )
+            )
+        )
+        session = result.scalar_one_or_none()
+        return session
+
     async def validate_session(self, session: Session) -> bool:
         """Validate if session is still valid."""
         if not session.is_valid:
