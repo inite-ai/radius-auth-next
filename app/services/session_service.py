@@ -71,8 +71,8 @@ class SessionService:
             .where(
                 and_(
                     Session.refresh_token_hash == refresh_token_hash,
-                    Session.is_active,
-                    not Session.is_revoked,
+                    Session.is_active == True,
+                    Session.is_revoked == False,
                 )
             )
         )
@@ -88,8 +88,8 @@ class SessionService:
                 and_(
                     Session.id == session_id,
                     Session.user_id == user_id,
-                    Session.is_active,
-                    not Session.is_revoked,
+                    Session.is_active == True,
+                    Session.is_revoked == False,
                 )
             )
         )
@@ -150,8 +150,8 @@ class SessionService:
                 and_(
                     Session.user_id == user_id,
                     Session.session_id != current_session_id,
-                    Session.is_active,
-                    not Session.is_revoked,
+                    Session.is_active == True,
+                    Session.is_revoked == False,
                 )
             )
         )
@@ -174,8 +174,8 @@ class SessionService:
         if not include_revoked:
             query = query.where(
                 and_(
-                    Session.is_active,
-                    not Session.is_revoked,
+                    Session.is_active == True,
+                    Session.is_revoked == False,
                 )
             )
 
@@ -204,8 +204,8 @@ class SessionService:
             select(Session).where(
                 and_(
                     Session.user_id == user_id,
-                    Session.is_active,
-                    not Session.is_revoked,
+                    Session.is_active == True,
+                    Session.is_revoked == False,
                     Session.expires_at > datetime.utcnow(),
                 )
             )
@@ -242,9 +242,10 @@ class SessionService:
 
     async def revoke_session(self, session: Session) -> None:
         """Revoke a session by marking it as inactive and revoked."""
-        session.is_active = False
-        session.is_revoked = True
+        session.revoke()
+        self.db.add(session)
         await self.db.commit()
+        await self.db.refresh(session)
 
     async def revoke_all_user_sessions(self, user_id: int) -> int:
         """Revoke all sessions for a user."""

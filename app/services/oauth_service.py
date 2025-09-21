@@ -248,7 +248,7 @@ class OAuthService:
             select(OAuthAccessToken).where(
                 OAuthAccessToken.refresh_token == refresh_token,
                 OAuthAccessToken.client_id == client.client_id,
-                not OAuthAccessToken.is_revoked,
+                OAuthAccessToken.is_revoked == False,
             )
         )
         token = result.scalar_one_or_none()
@@ -286,7 +286,7 @@ class OAuthService:
             .join(User, OAuthAccessToken.user_id == User.id)
             .where(
                 OAuthAccessToken.access_token == access_token,
-                not OAuthAccessToken.is_revoked,
+                OAuthAccessToken.is_revoked == False,
             )
         )
         token_user = result.first()
