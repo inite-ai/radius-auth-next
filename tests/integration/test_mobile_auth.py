@@ -14,7 +14,7 @@ class TestMobileAuthentication:
         """Test successful mobile login with JWT tokens."""
 
         response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -31,7 +31,7 @@ class TestMobileAuthentication:
 
         # Mobile client should receive tokens in response body
         assert data["success"] is True
-        assert "Mobile login successful" in data["message"]
+        assert "Login successful" in data["message"]
         assert "tokens" in data
         assert "user" in data
         assert "device_info" in data
@@ -79,7 +79,7 @@ class TestMobileAuthentication:
 
         # Login to get tokens
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -108,7 +108,7 @@ class TestMobileAuthentication:
 
         # Login to get tokens
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -155,7 +155,7 @@ class TestMobileAuthentication:
 
         # Login to get tokens
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -244,7 +244,7 @@ class TestMobileDeviceDetection:
         """Test iOS device detection."""
 
         response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -265,7 +265,7 @@ class TestMobileDeviceDetection:
         """Test Android device detection."""
 
         response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -286,7 +286,7 @@ class TestMobileDeviceDetection:
         """Test Flutter app detection."""
 
         response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -317,7 +317,7 @@ class TestMobileTokenSecurity:
 
         # Login to get initial tokens
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -368,7 +368,7 @@ class TestMobileTokenSecurity:
 
         # Login to get tokens
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -408,7 +408,7 @@ class TestMobileTokenSecurity:
 
         # Login to get valid token
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -437,7 +437,7 @@ class TestMobileTokenSecurity:
 
         # Login with mobile device
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -484,7 +484,7 @@ class TestMobileTokenSecurity:
 
         for i in range(3):
             login_response = await async_client.post(
-                "/api/v1/auth/mobile/login",
+                "/api/v1/auth/login",
                 json={
                     "email": create_test_user.email,
                     "password": create_test_user.original_password,
@@ -523,7 +523,7 @@ class TestMobileTokenValidation:
 
         # Login to get token
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,

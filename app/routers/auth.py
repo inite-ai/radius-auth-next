@@ -1,6 +1,8 @@
 """Authentication routes."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_active_user, get_optional_current_user
@@ -19,6 +21,15 @@ from app.schemas.auth import (
 from app.services.auth_service import AuthService
 from app.utils.device_detection import detect_client_type, get_device_info, should_use_cookies
 from app.utils.exceptions import AuthenticationError
+
+
+class APIKeyCreateRequest(BaseModel):
+    """Request model for API key creation."""
+
+    name: str
+    scopes: list[str] | None = None
+    expires_days: int | None = None
+
 
 router = APIRouter()
 
@@ -97,6 +108,11 @@ async def login(
                 last_login_at=user.last_login_at,
             ),
             tokens=response_tokens,
+            device_info={
+                "device_name": device_name,
+                "device_type": device_type,
+                "user_agent": user_agent,
+            },
         )
 
     except AuthenticationError as e:
@@ -293,67 +309,13 @@ async def verify_token(
 # ================== MOBILE/API CLIENT SPECIFIC ENDPOINTS ==================
 
 
-@router.post("/mobile/login", response_model=LoginResponse)
-async def mobile_login(
-    login_data: LoginRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Mobile client login - returns JWT tokens only, no cookies.
-
-    For iOS/Android/Flutter applications that store tokens securely.
-    """
-    auth_service = AuthService(db)
-
-    try:
-        user = await auth_service.authenticate_user(
-            email=login_data.email,
-            password=login_data.password,
-        )
-
-        user_agent = request.headers.get("User-Agent")
-        device_name, device_type = get_device_info(user_agent)
-
-        tokens = await auth_service.create_user_session(
-            user=user,
-            user_agent=user_agent,
-            ip_address=getattr(request.state, "client_ip", None),
-            device_name=device_name or "Mobile Device",
-            device_type="mobile",
-            is_remember_me=login_data.remember_me,
-        )
-
-        from app.schemas.auth import UserProfile
-
-        return {
-            "success": True,
-            "message": "Mobile login successful",
-            "user": UserProfile.model_validate(user),
-            "tokens": tokens,
-            "device_info": {
-                "device_name": device_name or "Mobile Device",
-                "device_type": device_type or "mobile",
-            },
-        }
-
-    except AuthenticationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=e.message,
-        )
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error",
-        )
+# Mobile login removed - use universal /login endpoint instead
+# It auto-detects client type and returns appropriate response format
 
 
 @router.post("/api-key/create")
 async def create_api_key(
-    name: str,
-    scopes: list | None = Query(default=None),
-    expires_days: int | None = None,
+    request: APIKeyCreateRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -372,16 +334,16 @@ async def create_api_key(
 
     # Set expiration
     expires_at = None
-    if expires_days:
-        expires_at = create_expiration_time(days=expires_days)
+    if request.expires_days:
+        expires_at = create_expiration_time(days=request.expires_days)
 
     # Create API key record
     api_key_record = APIKey(
         user_id=current_user.id,
-        name=name,
+        name=request.name,
         key_hash=key_hash,
         prefix=api_key.split("_")[0],
-        scopes_list=scopes or [],
+        scopes_list=request.scopes or [],
         expires_at=expires_at,
     )
 

@@ -16,7 +16,7 @@ class TestAPIKeyAuthentication:
 
         response = await async_client.post(
             "/api/v1/auth/api-key/create",
-            params={
+            json={
                 "name": "Test API Key",
                 "scopes": ["profile", "organizations"],
                 "expires_days": 30,
@@ -64,7 +64,7 @@ class TestAPIKeyAuthentication:
         # Create API key with limited scope
         create_response = await async_client.post(
             "/api/v1/auth/api-key/create",
-            params={
+            json={
                 "name": "Limited API Key",
                 "scopes": ["profile"],  # No organizations scope
             },
@@ -171,7 +171,7 @@ class TestAPIKeyAuthentication:
         # Create API key that expires in 1 day
         create_response = await async_client.post(
             "/api/v1/auth/api-key/create",
-            params={
+            json={
                 "name": "Expiring API Key",
                 "expires_days": 1,
             },
@@ -356,7 +356,7 @@ class TestAPIKeySecurity:
         # Create API key
         create_response = await async_client.post(
             "/api/v1/auth/api-key/create",
-            params={
+            json={
                 "name": "Prefix Test Key",
             },
             headers=auth_headers,
@@ -384,7 +384,7 @@ class TestAPIKeySecurity:
         # Create API key
         create_response = await async_client.post(
             "/api/v1/auth/api-key/create",
-            params={
+            json={
                 "name": "Hash Test Key",
             },
             headers=auth_headers,
@@ -412,7 +412,7 @@ class TestAPIKeySecurity:
         # Create API key with no scopes
         create_response = await async_client.post(
             "/api/v1/auth/api-key/create",
-            params={
+            json={
                 "name": "No Scope Key",
                 "scopes": [],
             },
@@ -445,7 +445,7 @@ class TestAPIKeyManagement:
         for i in range(3):
             response = await async_client.post(
                 "/api/v1/auth/api-key/create",
-                params={
+                json={
                     "name": f"API Key {i}",
                     "scopes": ["profile"],
                 },
@@ -472,7 +472,7 @@ class TestAPIKeyManagement:
 
         response = await async_client.post(
             "/api/v1/auth/api-key/create",
-            params={
+            json={
                 "name": "Expiring Key",
                 "expires_days": 7,
             },
@@ -500,7 +500,7 @@ class TestAPIKeyManagement:
 
         response = await async_client.post(
             "/api/v1/auth/api-key/create",
-            params={
+            json={
                 "name": "Permanent Key",
             },
             headers=auth_headers,

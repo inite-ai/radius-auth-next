@@ -183,33 +183,8 @@ async def create_test_user(test_user_data):
             print(f"Error creating test user: {e}")
             raise
         finally:
-            # Clean up will happen after the test finishes, not immediately after yield
+            # Clean up will happen automatically when database is dropped in test teardown
             pass
-
-    # Clean up user after test finishes
-    async with session_local() as cleanup_session:
-        try:
-            # Delete related sessions first (cascade should handle this, but be explicit)
-            from sqlalchemy import select
-
-            from app.models.session import Session
-
-            sessions_result = await cleanup_session.execute(
-                select(Session).where(Session.user_id == user.id)
-            )
-            sessions = sessions_result.scalars().all()
-            for session in sessions:
-                await cleanup_session.delete(session)
-
-            # Delete the user
-            await cleanup_session.delete(user)
-            await cleanup_session.commit()
-        except Exception as cleanup_error:
-            print(f"Error during cleanup: {cleanup_error}")
-            try:
-                await cleanup_session.rollback()
-            except:
-                pass
 
 
 # Create admin user helper
@@ -292,14 +267,14 @@ async def create_test_organization(db_session, test_organization_data, create_te
 async def auth_headers(async_client, create_test_user):
     """Get authentication headers for test user."""
 
-    # Login to get JWT token
+    # Login to get JWT token using universal login endpoint
     login_response = await async_client.post(
-        "/api/v1/auth/mobile/login",
+        "/api/v1/auth/login",
         json={
             "email": create_test_user.email,
             "password": create_test_user.original_password,
         },
-        headers={"User-Agent": "TestApp/1.0 (Mobile)"},
+        headers={"User-Agent": "TestApp/1.0 (Mobile)"},  # Mobile user-agent for JWT tokens
     )
 
     assert login_response.status_code == 200
@@ -315,7 +290,7 @@ async def admin_auth_headers(async_client, create_admin_user):
 
     # Login to get JWT token
     login_response = await async_client.post(
-        "/api/v1/auth/mobile/login",
+        "/api/v1/auth/login",
         json={
             "email": create_admin_user.email,
             "password": create_admin_user.original_password,

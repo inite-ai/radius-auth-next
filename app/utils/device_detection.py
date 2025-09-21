@@ -17,14 +17,16 @@ def detect_client_type(user_agent: str | None, accept_header: str | None = None)
         r"alamofire",  # iOS Alamofire
         r"afnetworking",  # iOS AFNetworking
         r"urlsession",  # iOS URLSession
+        r"cfnetwork",  # iOS CFNetwork
         r"android.*app",
         r"ios.*app",
         r"flutter",
         r"dart/",
         r"kotlin",
         r"swift/",
-        # Pattern for mobile app user agents like "MyApp/1.0 (Android; ...)" or "TestApp/1.0 (iOS; ...)"
+        # Patterns for mobile app user agents like "MyApp/1.0 (iPhone; iOS 14.0; iPhone12,1)" or "TestApp/1.0 (Android; ...)"
         r"\w+app/[\d.]+\s*\((android|ios)",
+        r"\w+/[\d.]+\s*\((iphone|ipad|android)",  # e.g. "MyApp/1.0 (iPhone; ..."
     ]
 
     for pattern in mobile_patterns:
@@ -93,12 +95,17 @@ def get_device_info(user_agent: str | None) -> tuple[str | None, str | None]:
     device_name = None
 
     # Mobile devices
-    if any(pattern in user_agent_lower for pattern in ["iphone", "ios"]):
+    if any(pattern in user_agent_lower for pattern in ["iphone", "ios"]) or (
+        "cfnetwork" in user_agent_lower and "darwin" in user_agent_lower
+    ):
         device_type = "mobile"
         device_name = "iPhone/iPad"
     elif "android" in user_agent_lower:
         device_type = "mobile"
         device_name = "Android Device"
+    elif any(pattern in user_agent_lower for pattern in ["flutter", "dart"]):
+        device_type = "mobile"
+        device_name = "Flutter App"
     elif any(pattern in user_agent_lower for pattern in ["windows", "win32", "win64"]):
         device_type = "web"
         device_name = "Windows PC"

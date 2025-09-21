@@ -684,7 +684,7 @@ class TestOAuthIntegration:
 
         # Get regular JWT token
         jwt_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,

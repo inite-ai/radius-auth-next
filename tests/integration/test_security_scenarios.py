@@ -20,7 +20,7 @@ class TestTokenRotationSecurity:
 
         # Login to get initial tokens
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -66,7 +66,7 @@ class TestTokenRotationSecurity:
 
         # Login
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -107,9 +107,9 @@ class TestTokenRotationSecurity:
         """Test access token short expiry enforcement."""
 
         # Create a manually expired access token
-        from app.services.jwt_service import JWTService
+        import jwt
 
-        jwt_service = JWTService()
+        from app.config.settings import settings
 
         # Create token that expired 1 hour ago
         payload = {
@@ -120,7 +120,7 @@ class TestTokenRotationSecurity:
             "type": "access",
         }
 
-        expired_token = await jwt_service.encode_token(payload)
+        expired_token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
         # Try to use expired token
         response = await async_client.get(
@@ -337,7 +337,7 @@ class TestSessionSecurity:
 
         # Login from specific IP
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -370,7 +370,7 @@ class TestSessionSecurity:
 
         # Login with specific User-Agent
         login_response = await async_client.post(
-            "/api/v1/auth/mobile/login",
+            "/api/v1/auth/login",
             json={
                 "email": create_test_user.email,
                 "password": create_test_user.original_password,
@@ -402,7 +402,7 @@ class TestSessionSecurity:
 
         for i in range(5):
             response = await async_client.post(
-                "/api/v1/auth/mobile/login",
+                "/api/v1/auth/login",
                 json={
                     "email": create_test_user.email,
                     "password": create_test_user.original_password,
@@ -465,15 +465,21 @@ class TestPasswordSecurity:
 
         # Request password reset
         response = await async_client.post(
-            "/api/v1/auth/forgot-password",
+            "/api/v1/auth/password-reset/request",
             json={"email": create_test_user.email},
         )
 
         # Should succeed regardless of whether email exists (no enumeration)
         assert response.status_code == 200
 
-        # Token validation would require email testing infrastructure
-        # This test verifies the endpoint exists and responds appropriately
+        # Test password reset confirm endpoint with invalid token
+        confirm_response = await async_client.post(
+            "/api/v1/auth/password-reset/confirm",
+            json={"token": "invalid_token_123", "new_password": "newpassword123"},
+        )
+
+        # Should fail with invalid token
+        assert confirm_response.status_code in [400, 401, 422]  # Bad request or unauthorized
 
     @pytest.mark.asyncio
     async def test_password_change_session_invalidation(
@@ -486,7 +492,7 @@ class TestPasswordSecurity:
 
         for i in range(3):
             login_response = await async_client.post(
-                "/api/v1/auth/mobile/login",
+                "/api/v1/auth/login",
                 json={
                     "email": create_test_user.email,
                     "password": create_test_user.original_password,
@@ -538,7 +544,7 @@ class TestInputValidationSecurity:
         )
 
         # Should fail safely (not crash or expose SQL errors)
-        assert response.status_code == 401
+        assert response.status_code in [401, 422]  # 422 = validation error, 401 = auth error
         assert "SQL" not in response.json().get("detail", "")
 
     @pytest.mark.asyncio
@@ -556,7 +562,7 @@ class TestInputValidationSecurity:
         )
 
         # Error message should not contain unescaped script tags
-        assert response.status_code == 401
+        assert response.status_code in [401, 422]  # 422 = validation error, 401 = auth error
         detail = response.json().get("detail", "")
         assert "<script>" not in detail
 

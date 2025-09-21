@@ -60,6 +60,27 @@ async def get_user_sessions(
     )
 
 
+@router.delete("/other")
+async def revoke_other_sessions(
+    revoke_request: RevokeOtherSessionsRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke all other sessions except current one."""
+
+    session_service = SessionService(db)
+    revoked_count = await session_service.revoke_other_sessions(
+        user_id=current_user.id,
+        current_session_id=revoke_request.current_session_id,
+    )
+
+    return {
+        "success": True,
+        "message": f"Revoked {revoked_count} sessions",
+        "revoked_sessions": revoked_count,
+    }
+
+
 @router.delete("/{session_id}")
 async def revoke_session(
     session_id: str,
@@ -69,7 +90,7 @@ async def revoke_session(
     """Revoke a specific session."""
 
     session_service = SessionService(db)
-    session = await session_service.get_session_by_id(session_id)
+    session = await session_service.get_session_by_session_id(session_id)
 
     if not session:
         raise HTTPException(
@@ -89,27 +110,6 @@ async def revoke_session(
     return {
         "success": True,
         "message": "Session revoked successfully",
-    }
-
-
-@router.delete("/other")
-async def revoke_other_sessions(
-    revoke_request: RevokeOtherSessionsRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Revoke all other sessions except current one."""
-
-    session_service = SessionService(db)
-    revoked_count = await session_service.revoke_other_sessions(
-        user_id=current_user.id,
-        current_session_id=revoke_request.current_session_id,
-    )
-
-    return {
-        "success": True,
-        "message": f"Revoked {revoked_count} sessions",
-        "revoked_sessions": revoked_count,
     }
 
 
