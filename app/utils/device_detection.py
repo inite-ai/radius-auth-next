@@ -1,73 +1,72 @@
 """Device detection utilities."""
 
 import re
-from typing import Optional, Tuple
 
 
-def detect_client_type(user_agent: Optional[str], accept_header: Optional[str] = None) -> str:
+def detect_client_type(user_agent: str | None, accept_header: str | None = None) -> str:
     """Detect client type from User-Agent and Accept headers."""
-    
+
     if not user_agent:
         return "unknown"
-    
+
     user_agent = user_agent.lower()
-    
+
     # Mobile apps (iOS/Android native)
     mobile_patterns = [
-        r'okhttp',  # Android OkHttp
-        r'alamofire',  # iOS Alamofire
-        r'afnetworking',  # iOS AFNetworking
-        r'urlsession',  # iOS URLSession
-        r'android.*app',
-        r'ios.*app',
-        r'flutter',
-        r'dart/',
-        r'kotlin',
-        r'swift/',
+        r"okhttp",  # Android OkHttp
+        r"alamofire",  # iOS Alamofire
+        r"afnetworking",  # iOS AFNetworking
+        r"urlsession",  # iOS URLSession
+        r"android.*app",
+        r"ios.*app",
+        r"flutter",
+        r"dart/",
+        r"kotlin",
+        r"swift/",
         # Pattern for mobile app user agents like "MyApp/1.0 (Android; ...)" or "TestApp/1.0 (iOS; ...)"
-        r'\w+app/[\d.]+\s*\((android|ios)',
+        r"\w+app/[\d.]+\s*\((android|ios)",
     ]
-    
+
     for pattern in mobile_patterns:
         if re.search(pattern, user_agent):
             return "mobile"
-    
+
     # CLI/Scripts/Integrations
     cli_patterns = [
-        r'curl',
-        r'wget',
-        r'httpie',
-        r'python-requests',
-        r'python-urllib',
-        r'postman',
-        r'insomnia',
-        r'cli',
-        r'script',
-        r'bot',
-        r'automated',
-        r'integration',
+        r"curl",
+        r"wget",
+        r"httpie",
+        r"python-requests",
+        r"python-urllib",
+        r"postman",
+        r"insomnia",
+        r"cli",
+        r"script",
+        r"bot",
+        r"automated",
+        r"integration",
     ]
-    
+
     for pattern in cli_patterns:
         if re.search(pattern, user_agent):
             return "api"
-    
+
     # Browsers
     browser_patterns = [
-        r'mozilla',
-        r'webkit',
-        r'chrome',
-        r'safari',
-        r'firefox',
-        r'edge',
-        r'opera',
-        r'msie',
+        r"mozilla",
+        r"webkit",
+        r"chrome",
+        r"safari",
+        r"firefox",
+        r"edge",
+        r"opera",
+        r"msie",
     ]
-    
+
     for pattern in browser_patterns:
         if re.search(pattern, user_agent):
             return "web"
-    
+
     return "api"  # Default to API client for unknown
 
 
@@ -81,44 +80,44 @@ def should_use_csrf(client_type: str) -> bool:
     return client_type == "web"
 
 
-def get_device_info(user_agent: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+def get_device_info(user_agent: str | None) -> tuple[str | None, str | None]:
     """Extract device name and type from User-Agent."""
-    
+
     if not user_agent:
         return None, None
-    
+
     user_agent_lower = user_agent.lower()
-    
+
     # Device type detection
     device_type = None
     device_name = None
-    
+
     # Mobile devices
-    if any(pattern in user_agent_lower for pattern in ['iphone', 'ios']):
+    if any(pattern in user_agent_lower for pattern in ["iphone", "ios"]):
         device_type = "mobile"
         device_name = "iPhone/iPad"
-    elif 'android' in user_agent_lower:
+    elif "android" in user_agent_lower:
         device_type = "mobile"
         device_name = "Android Device"
-    elif any(pattern in user_agent_lower for pattern in ['windows', 'win32', 'win64']):
+    elif any(pattern in user_agent_lower for pattern in ["windows", "win32", "win64"]):
         device_type = "web"
         device_name = "Windows PC"
-    elif any(pattern in user_agent_lower for pattern in ['macintosh', 'mac os']):
+    elif any(pattern in user_agent_lower for pattern in ["macintosh", "mac os"]):
         device_type = "web"
         device_name = "Mac"
-    elif 'linux' in user_agent_lower:
+    elif "linux" in user_agent_lower:
         device_type = "web"
         device_name = "Linux PC"
-    
+
     # Browser detection for device name refinement
     if device_type == "web":
-        if 'chrome' in user_agent_lower:
+        if "chrome" in user_agent_lower:
             device_name += " (Chrome)"
-        elif 'firefox' in user_agent_lower:
+        elif "firefox" in user_agent_lower:
             device_name += " (Firefox)"
-        elif 'safari' in user_agent_lower:
+        elif "safari" in user_agent_lower:
             device_name += " (Safari)"
-        elif 'edge' in user_agent_lower:
+        elif "edge" in user_agent_lower:
             device_name += " (Edge)"
-    
+
     return device_name, device_type

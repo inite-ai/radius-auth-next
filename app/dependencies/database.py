@@ -1,11 +1,12 @@
 """Database dependencies for FastAPI."""
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import redis.asyncio as aioredis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config.database import get_async_session_local, get_redis as _get_redis
+from app.config.database import get_async_session_local
+from app.config.database import get_redis as _get_redis
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

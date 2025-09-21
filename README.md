@@ -10,7 +10,7 @@ Modern authorization service built with FastAPI, Pydantic, and PostgreSQL.
 - **API Keys**: Scoped API keys for machine-to-machine authentication
 - **OAuth Integration**: Support for Google, GitHub, and other providers
 
-### 🏢 Multi-Tenant Architecture  
+### 🏢 Multi-Tenant Architecture
 - **Organizations**: Tenant isolation with role-based access control
 - **Memberships**: User-organization relationships with roles (owner, admin, editor, viewer)
 - **Policies**: Declarative authorization with guard helpers
@@ -84,13 +84,13 @@ The API will be available at `http://localhost:8000` with interactive docs at `/
 
 #### Mobile/API Clients
 ```
-1. Login with email/password  
+1. Login with email/password
 2. Receive JWT access + refresh tokens
 3. Access token in Authorization header
 4. Refresh token rotation on expiry
 ```
 
-#### Machine Clients  
+#### Machine Clients
 ```
 1. Generate API key with scopes
 2. Include X-API-Key header
@@ -115,7 +115,7 @@ require(user, Action.DELETE, "user", user_id=target_user.id, organization_id=org
 
 #### Role Hierarchy
 - **Owner**: Full access including billing and org deletion
-- **Admin**: Full access except billing and org deletion  
+- **Admin**: Full access except billing and org deletion
 - **Editor**: Can create/edit content and manage users
 - **Viewer**: Read-only access
 
@@ -123,7 +123,7 @@ require(user, Action.DELETE, "user", user_id=target_user.id, organization_id=org
 
 ```
 users                    organizations           sessions
-├── id                  ├── id                  ├── id  
+├── id                  ├── id                  ├── id
 ├── email               ├── name                ├── user_id (FK)
 ├── password_hash       ├── slug                ├── session_id
 ├── first_name          ├── is_active           ├── refresh_token_hash
@@ -133,7 +133,7 @@ users                    organizations           sessions
 
 memberships             api_keys                oauth_identities
 ├── id                  ├── id                  ├── id
-├── user_id (FK)        ├── user_id (FK)        ├── user_id (FK)  
+├── user_id (FK)        ├── user_id (FK)        ├── user_id (FK)
 ├── organization_id (FK)├── key_hash            ├── provider
 ├── role               ├── scopes              ├── provider_user_id
 └── is_active          └── last_used_at        └── access_token
@@ -143,7 +143,7 @@ memberships             api_keys                oauth_identities
 
 ### Authentication
 - `POST /api/v1/auth/login` - Email/password login
-- `POST /api/v1/auth/refresh` - Refresh access token  
+- `POST /api/v1/auth/refresh` - Refresh access token
 - `POST /api/v1/auth/logout` - Logout current session
 - `POST /api/v1/auth/logout-all` - Logout all sessions
 - `GET /api/v1/auth/me` - Get current user info
@@ -154,7 +154,7 @@ memberships             api_keys                oauth_identities
 - `PUT /api/v1/users/{id}` - Update user
 - `DELETE /api/v1/users/{id}` - Deactivate user
 
-### Organizations  
+### Organizations
 - `GET /api/v1/organizations/` - List user's organizations
 - `POST /api/v1/organizations/` - Create organization
 - `GET /api/v1/organizations/{id}` - Get organization details
@@ -175,7 +175,7 @@ memberships             api_keys                oauth_identities
 - Device fingerprinting
 - Session rotation on refresh
 
-### Token Security  
+### Token Security
 - RS256 JWT signatures
 - Short-lived access tokens (15 min)
 - Refresh token rotation
@@ -227,7 +227,7 @@ pytest tests/ -v --cov=app
 # Create migration
 alembic revision --autogenerate -m "description"
 
-# Apply migrations  
+# Apply migrations
 alembic upgrade head
 
 # Rollback

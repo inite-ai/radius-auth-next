@@ -6,7 +6,7 @@
 
 #### Основные сущности:
 - **Organizations (orgs)** - тенанты/компании
-- **Users** - пользователи системы  
+- **Users** - пользователи системы
 - **Memberships** - связь пользователей с организациями и ролями (user_id, org_id, role)
 - **Roles** - роли: owner, admin, editor, viewer
 - **Permissions** - политики доступа через код (can?(:update, :doc, ctx))
@@ -30,7 +30,7 @@
 - Безопасное хранение в keychain/keystore
 
 #### API ключи для машин:
-- Формат: `prefix_xxx...` 
+- Формат: `prefix_xxx...`
 - Хранение хэша в БД с scope'ами
 - Возможность отзыва
 

@@ -1,7 +1,5 @@
 """Session management routes."""
 
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,13 +25,13 @@ async def get_user_sessions(
     include_revoked: bool = Query(False, description="Include revoked sessions"),
 ):
     """Get current user's sessions."""
-    
+
     session_service = SessionService(db)
     sessions = await session_service.get_user_sessions(
         user_id=current_user.id,
         include_revoked=include_revoked,
     )
-    
+
     # TODO: Detect current session by comparing with request session
     session_responses = []
     for session in sessions:
@@ -53,7 +51,7 @@ async def get_user_sessions(
             expires_at=session.expires_at,
         )
         session_responses.append(session_response)
-    
+
     return SessionListResponse(
         success=True,
         message="Sessions retrieved successfully",
@@ -69,25 +67,25 @@ async def revoke_session(
     db: AsyncSession = Depends(get_db),
 ):
     """Revoke a specific session."""
-    
+
     session_service = SessionService(db)
     session = await session_service.get_session_by_id(session_id)
-    
+
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found",
         )
-    
+
     # Check if session belongs to current user
     if session.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
-    
+
     await session_service.revoke_session(session)
-    
+
     return {
         "success": True,
         "message": "Session revoked successfully",
@@ -101,13 +99,13 @@ async def revoke_other_sessions(
     db: AsyncSession = Depends(get_db),
 ):
     """Revoke all other sessions except current one."""
-    
+
     session_service = SessionService(db)
     revoked_count = await session_service.revoke_other_sessions(
         user_id=current_user.id,
         current_session_id=revoke_request.current_session_id,
     )
-    
+
     return {
         "success": True,
         "message": f"Revoked {revoked_count} sessions",
@@ -121,10 +119,10 @@ async def get_session_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """Get session statistics for current user."""
-    
+
     session_service = SessionService(db)
     stats_data = await session_service.get_session_stats(current_user.id)
-    
+
     return SessionStatsResponse(
         success=True,
         message="Session statistics retrieved successfully",

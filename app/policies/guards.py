@@ -1,13 +1,13 @@
 """Guard helpers for authorization checks."""
 
-from typing import Any, Optional, Type
+from typing import Any
 
 from fastapi import HTTPException, status
 
 from app.models.membership import Role
 from app.models.user import User
 
-from .base_policy import Action, BasePolicy, PolicyContext, PolicyResult
+from .base_policy import Action, BasePolicy, PolicyContext
 from .resource_policy import ResourcePolicy
 from .user_policy import UserPolicy
 
@@ -22,14 +22,14 @@ def can(
     user: User,
     action: Action,
     resource_type: str = "resource",
-    resource: Optional[Any] = None,
-    resource_id: Optional[int] = None,
-    organization_id: Optional[int] = None,
-    **kwargs
+    resource: Any | None = None,
+    resource_id: int | None = None,
+    organization_id: int | None = None,
+    **kwargs,
 ) -> bool:
     """
     Check if user can perform action on resource.
-    
+
     Usage:
         can(user, Action.UPDATE, "user", user_id=123, organization_id=456)
         can(user, Action.CREATE, "document", organization_id=456)
@@ -42,11 +42,11 @@ def can(
         resource_id=resource_id,
         extra_data=kwargs,
     )
-    
+
     policy_class = POLICY_REGISTRY.get(resource_type, ResourcePolicy)
     policy = policy_class()
     result = policy.check(action, context)
-    
+
     return result.allowed
 
 
@@ -54,15 +54,15 @@ def require(
     user: User,
     action: Action,
     resource_type: str = "resource",
-    resource: Optional[Any] = None,
-    resource_id: Optional[int] = None,
-    organization_id: Optional[int] = None,
-    **kwargs
+    resource: Any | None = None,
+    resource_id: int | None = None,
+    organization_id: int | None = None,
+    **kwargs,
 ) -> None:
     """
     Require that user can perform action on resource.
     Raises HTTPException if not allowed.
-    
+
     Usage:
         require(user, Action.UPDATE, "user", user_id=123, organization_id=456)
         require(user, Action.CREATE, "document", organization_id=456)
@@ -74,11 +74,11 @@ def require(
         resource_id=resource_id,
         extra_data=kwargs,
     )
-    
+
     policy_class = POLICY_REGISTRY.get(resource_type, ResourcePolicy)
     policy = policy_class()
     result = policy.check(action, context)
-    
+
     if not result.allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -93,7 +93,7 @@ def require_role(
 ) -> None:
     """
     Require that user has specific role in organization.
-    
+
     Usage:
         require_role(user, Role.ADMIN, organization_id=456)
     """
@@ -101,7 +101,7 @@ def require_role(
         user=user,
         organization_id=organization_id,
     )
-    
+
     if not context.has_role_or_higher(required_role):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -115,7 +115,7 @@ def require_organization_member(
 ) -> None:
     """
     Require that user is a member of organization.
-    
+
     Usage:
         require_organization_member(user, organization_id=456)
     """
@@ -123,7 +123,7 @@ def require_organization_member(
         user=user,
         organization_id=organization_id,
     )
-    
+
     if not context.is_organization_member():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -134,7 +134,7 @@ def require_organization_member(
 def require_superuser(user: User) -> None:
     """
     Require that user is a superuser.
-    
+
     Usage:
         require_superuser(user)
     """
@@ -148,7 +148,7 @@ def require_superuser(user: User) -> None:
 def require_active_user(user: User) -> None:
     """
     Require that user is active and can login.
-    
+
     Usage:
         require_active_user(user)
     """
@@ -157,7 +157,7 @@ def require_active_user(user: User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive",
         )
-    
+
     if not user.can_login:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -165,10 +165,10 @@ def require_active_user(user: User) -> None:
         )
 
 
-def register_policy(resource_type: str, policy_class: Type[BasePolicy]) -> None:
+def register_policy(resource_type: str, policy_class: type[BasePolicy]) -> None:
     """
     Register a custom policy for a resource type.
-    
+
     Usage:
         register_policy("document", DocumentPolicy)
     """

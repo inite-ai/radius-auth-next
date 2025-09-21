@@ -8,7 +8,6 @@ from fastapi.responses import JSONResponse
 from app.config.database import close_redis, init_redis
 from app.config.settings import settings
 from app.middleware.auth_middleware import AuthMiddleware
-from app.middleware.csrf_middleware import CSRFMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import auth, oauth, organizations, sessions, users
 from app.utils.exceptions import BaseAuthException, ValidationError
@@ -78,9 +77,10 @@ async def not_found_handler(request: Request, exc):
 async def internal_error_handler(request: Request, exc):
     """Handle 500 errors."""
     import traceback
+
     print(f"500 ERROR HANDLER: {exc}")
     print(f"TRACEBACK: {traceback.format_exc()}")
-    
+
     return JSONResponse(
         status_code=500,
         content={
@@ -95,14 +95,15 @@ async def internal_error_handler(request: Request, exc):
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle all other exceptions."""
     import traceback
+
     print(f"GENERAL EXCEPTION HANDLER: {exc}")
     print(f"TRACEBACK: {traceback.format_exc()}")
-    
+
     return JSONResponse(
         status_code=500,
         content={
             "error": True,
-            "error_code": "INTERNAL_ERROR", 
+            "error_code": "INTERNAL_ERROR",
             "message": "Internal server error",
         },
     )
@@ -162,7 +163,6 @@ app.include_router(
     prefix=f"{settings.API_PREFIX}/oauth",
     tags=["OAuth 2.0"],
 )
-
 
 
 # Root endpoint

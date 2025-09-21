@@ -312,15 +312,15 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov httpx
-      
+
       - name: Run tests
         run: python run_tests.py --coverage
-      
+
       - name: Upload coverage
         uses: codecov/codecov-action@v3
 ```

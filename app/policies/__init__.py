@@ -8,7 +8,7 @@ from .user_policy import UserPolicy
 
 __all__ = [
     "BasePolicy",
-    "PolicyContext", 
+    "PolicyContext",
     "PolicyResult",
     "UserPolicy",
     "ResourcePolicy",

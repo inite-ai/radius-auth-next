@@ -3,7 +3,6 @@
 import secrets
 import string
 from datetime import datetime, timedelta
-from typing import Optional
 
 from passlib.context import CryptContext
 
@@ -47,12 +46,12 @@ def is_strong_password(password: str) -> bool:
     """Check if password meets strength requirements."""
     if len(password) < 8:
         return False
-    
+
     has_upper = any(c.isupper() for c in password)
     has_lower = any(c.islower() for c in password)
     has_digit = any(c.isdigit() for c in password)
     has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password)
-    
+
     return all([has_upper, has_lower, has_digit, has_special])
 
 
@@ -64,10 +63,11 @@ def constant_time_compare(a: str, b: str) -> bool:
 def hash_token(token: str) -> str:
     """Hash a token for storage (for refresh tokens, API keys, etc.)."""
     import hashlib
+
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def create_expiration_time(minutes: Optional[int] = None, days: Optional[int] = None) -> datetime:
+def create_expiration_time(minutes: int | None = None, days: int | None = None) -> datetime:
     """Create an expiration timestamp."""
     if minutes:
         return datetime.utcnow() + timedelta(minutes=minutes)

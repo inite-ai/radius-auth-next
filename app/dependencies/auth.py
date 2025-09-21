@@ -1,7 +1,5 @@
 """Authentication dependencies for FastAPI."""
 
-from typing import Optional
-
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
@@ -21,69 +19,70 @@ security = HTTPBearer(auto_error=False)
 
 async def get_current_user(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: AsyncSession = Depends(get_db),
-) -> Optional[User]:
+) -> User | None:
     """Get current user from token or session."""
-    
+
     auth_service = AuthService(db)
-    
+
     # Try Bearer token first (for API clients and OAuth)
     if credentials:
         try:
             # First try as our internal JWT
             payload = await auth_service.verify_access_token(credentials.credentials)
             user_id = int(payload["sub"])
-            
-            result = await db.execute(
-                select(User).where(User.id == user_id)
-            )
+
+            result = await db.execute(select(User).where(User.id == user_id))
             user = result.scalar_one_or_none()
-            
+
             if user and user.can_login:
                 # Check session status if session_id is in payload
                 if "session_id" in payload:
                     from app.models.session import Session
+
                     session_result = await db.execute(
                         select(Session).where(
                             Session.id == payload["session_id"],
                             Session.user_id == user.id,
-                            Session.is_active == True,
-                            Session.is_revoked == False
+                            Session.is_active,
+                            not Session.is_revoked,
                         )
                     )
                     session = session_result.scalar_one_or_none()
                     if not session:
                         # Session is revoked or invalid
                         return None
-                
+
                 # Store organization_id from token in request state
                 if "org_id" in payload:
                     request.state.organization_id = payload["org_id"]
                 return user
-            
+
         except InvalidTokenError:
             # Try as OAuth access token
             try:
                 from app.services.oauth_service import OAuthService
+
                 oauth_service = OAuthService(db)
                 token_user = await oauth_service.validate_access_token(credentials.credentials)
-                
+
                 if token_user:
                     token, user = token_user
                     # Store OAuth token info in request state
                     request.state.oauth_token = token
                     request.state.oauth_scopes = token.scopes_list
                     return user
-                    
+
             except Exception:
                 pass
-        except Exception as e:
+        except Exception:
             # Catch any other JWT related errors
             pass
-    
+
     # Try session cookie (for browser clients)
     from app.config.settings import settings
+
     session_token = request.cookies.get(settings.SESSION_COOKIE_NAME)
     if session_token:
         try:
@@ -103,7 +102,7 @@ async def get_current_user(
                     pass
         except Exception:
             pass
-    
+
     # Try API key (for machine clients)
     api_key = request.headers.get("X-API-Key")
     if api_key:
@@ -112,12 +111,12 @@ async def get_current_user(
             return user
         except Exception:
             pass
-    
+
     return None
 
 
 async def get_current_active_user(
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user),
 ) -> User:
     """Get current active user, raise exception if not authenticated."""
     if not current_user:
@@ -126,81 +125,79 @@ async def get_current_active_user(
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not current_user.can_login:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive or locked",
         )
-    
+
     return current_user
 
 
 async def get_optional_current_user(
-    current_user: Optional[User] = Depends(get_current_user),
-) -> Optional[User]:
+    current_user: User | None = Depends(get_current_user),
+) -> User | None:
     """Get current user if authenticated, otherwise None."""
     return current_user
 
 
 async def get_current_organization(
     request: Request,
-    organization_id: Optional[int] = None,
+    organization_id: int | None = None,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
-) -> Optional[Organization]:
+) -> Organization | None:
     """Get current organization from parameter or token."""
-    
+
     # Try organization_id parameter first
     target_org_id = organization_id
-    
+
     # Fall back to organization_id from token/request state
     if not target_org_id:
         target_org_id = getattr(request.state, "organization_id", None)
-    
+
     # Fall back to organization_id from query params or path
     if not target_org_id:
         target_org_id = request.path_params.get("organization_id")
         if not target_org_id:
             target_org_id = request.query_params.get("organization_id")
-        
+
         if target_org_id:
             try:
                 target_org_id = int(target_org_id)
             except ValueError:
                 target_org_id = None
-    
+
     if not target_org_id:
         return None
-    
+
     # Get organization and verify user has access
-    result = await db.execute(
-        select(Organization).where(Organization.id == target_org_id)
-    )
+    result = await db.execute(select(Organization).where(Organization.id == target_org_id))
     organization = result.scalar_one_or_none()
-    
+
     if not organization:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Organization not found",
         )
-    
+
     # Check if user has access to organization
     membership_result = await db.execute(
         select(Membership).where(
             Membership.user_id == current_user.id,
             Membership.organization_id == organization.id,
-            Membership.is_active == True,
+            Membership.is_active,
         )
     )
     membership = membership_result.scalar_one_or_none()
-    
+
     if not membership and not current_user.is_superuser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No access to this organization",
         )
-    
+
     return organization
 
 

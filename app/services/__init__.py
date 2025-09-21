@@ -6,6 +6,6 @@ from .session_service import SessionService
 
 __all__ = [
     "AuthService",
-    "JWTService", 
+    "JWTService",
     "SessionService",
 ]

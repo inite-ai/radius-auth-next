@@ -1,7 +1,5 @@
 """Organization management routes."""
 
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,17 +12,12 @@ from app.models.user import User
 from app.policies.base_policy import Action
 from app.policies.guards import require
 from app.schemas.organization import (
-    MemberListResponse,
-    MembershipResponse,
     OrganizationCreate,
     OrganizationDetailResponse,
     OrganizationListResponse,
     OrganizationResponse,
-    OrganizationUpdate,
     OrganizationWithRole,
-    UserSummary,
 )
-from app.utils.validators import validate_organization_slug
 
 router = APIRouter()
 
@@ -37,22 +30,22 @@ async def get_organizations(
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
 ):
     """Get organizations user has access to."""
-    
+
     # Get user's organizations through memberships
     result = await db.execute(
         select(Organization, Membership)
         .join(Membership, Organization.id == Membership.organization_id)
         .where(
             Membership.user_id == current_user.id,
-            Membership.is_active == True,
-            Organization.is_active == True,
+            Membership.is_active,
+            Organization.is_active,
         )
         .offset((page - 1) * per_page)
         .limit(per_page)
     )
-    
+
     org_memberships = result.all()
-    
+
     organizations_with_roles = []
     for org, membership in org_memberships:
         organizations_with_roles.append(
@@ -62,7 +55,7 @@ async def get_organizations(
                 joined_at=membership.created_at,
             )
         )
-    
+
     return OrganizationListResponse(
         success=True,
         message="Organizations retrieved successfully",
@@ -78,25 +71,23 @@ async def create_organization(
     db: AsyncSession = Depends(get_db),
 ):
     """Create new organization."""
-    
+
     # Check if slug is already taken
-    result = await db.execute(
-        select(Organization).where(Organization.slug == org_create.slug)
-    )
+    result = await db.execute(select(Organization).where(Organization.slug == org_create.slug))
     existing_org = result.scalar_one_or_none()
-    
+
     if existing_org:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Organization slug already exists",
         )
-    
+
     # Create organization
     organization = Organization(**org_create.dict())
-    
+
     db.add(organization)
     await db.flush()  # Get the ID
-    
+
     # Create owner membership for current user
     membership = Membership(
         user_id=current_user.id,
@@ -104,11 +95,11 @@ async def create_organization(
         role=Role.OWNER,
         is_active=True,
     )
-    
+
     db.add(membership)
     await db.commit()
     await db.refresh(organization)
-    
+
     return OrganizationDetailResponse(
         success=True,
         message="Organization created successfully",
@@ -124,7 +115,7 @@ async def get_organization(
     db: AsyncSession = Depends(get_db),
 ):
     """Get organization details."""
-    
+
     # Check permissions
     require(
         user=current_user,
@@ -133,32 +124,32 @@ async def get_organization(
         resource_id=organization_id,
         organization_id=organization_id,
     )
-    
+
     # Get organization
     result = await db.execute(
         select(Organization).where(
             Organization.id == organization_id,
-            Organization.is_active == True,
+            Organization.is_active,
         )
     )
     organization = result.scalar_one_or_none()
-    
+
     if not organization:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Organization not found",
         )
-    
+
     # Get user's role in organization
     membership_result = await db.execute(
         select(Membership).where(
             Membership.user_id == current_user.id,
             Membership.organization_id == organization_id,
-            Membership.is_active == True,
+            Membership.is_active,
         )
     )
     membership = membership_result.scalar_one_or_none()
-    
+
     return {
         "success": True,
         "organization": {
@@ -185,18 +176,18 @@ async def get_organization(
 @router.put("/{organization_id}")
 async def update_organization(
     organization_id: int,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
-    website: Optional[str] = None,
-    email: Optional[str] = None,
-    phone: Optional[str] = None,
-    logo_url: Optional[str] = None,
-    primary_color: Optional[str] = None,
+    name: str | None = None,
+    description: str | None = None,
+    website: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    logo_url: str | None = None,
+    primary_color: str | None = None,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update organization."""
-    
+
     # Check permissions
     require(
         user=current_user,
@@ -205,19 +196,17 @@ async def update_organization(
         resource_id=organization_id,
         organization_id=organization_id,
     )
-    
+
     # Get organization
-    result = await db.execute(
-        select(Organization).where(Organization.id == organization_id)
-    )
+    result = await db.execute(select(Organization).where(Organization.id == organization_id))
     organization = result.scalar_one_or_none()
-    
+
     if not organization:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Organization not found",
         )
-    
+
     # Update fields
     if name is not None:
         organization.name = name
@@ -233,10 +222,10 @@ async def update_organization(
         organization.logo_url = logo_url
     if primary_color is not None:
         organization.primary_color = primary_color
-    
+
     await db.commit()
     await db.refresh(organization)
-    
+
     return {
         "success": True,
         "message": "Organization updated successfully",
@@ -257,7 +246,7 @@ async def get_organization_members(
     limit: int = 100,
 ):
     """Get organization members."""
-    
+
     # Check permissions
     require(
         user=current_user,
@@ -266,22 +255,22 @@ async def get_organization_members(
         resource_id=organization_id,
         organization_id=organization_id,
     )
-    
+
     # Get members
     result = await db.execute(
         select(User, Membership)
         .join(Membership, User.id == Membership.user_id)
         .where(
             Membership.organization_id == organization_id,
-            Membership.is_active == True,
-            User.is_active == True,
+            Membership.is_active,
+            User.is_active,
         )
         .offset(skip)
         .limit(limit)
     )
-    
+
     user_memberships = result.all()
-    
+
     return {
         "success": True,
         "members": [

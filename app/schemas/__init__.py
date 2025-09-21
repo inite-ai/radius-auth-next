@@ -29,7 +29,7 @@ __all__ = [
     "PasswordChangeRequest",
     # Organization
     "OrganizationCreate",
-    "OrganizationUpdate", 
+    "OrganizationUpdate",
     "OrganizationResponse",
     "MembershipResponse",
     "OrganizationListResponse",

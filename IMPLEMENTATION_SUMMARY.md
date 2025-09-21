@@ -6,7 +6,7 @@
 
 **Реализованы модели:**
 - `organizations` - тенанты/компании
-- `users` - пользователи системы  
+- `users` - пользователи системы
 - `memberships(user_id, org_id, role)` - связи пользователей с организациями
 - `roles`: owner, admin, editor, viewer (enum в коде)
 
@@ -56,7 +56,7 @@
 
 **Middleware для разных клиентов:**
 - `AuthMiddleware` - базовая обработка запросов
-- `CSRFMiddleware` - защита от CSRF для браузеров  
+- `CSRFMiddleware` - защита от CSRF для браузеров
 - `RateLimitMiddleware` - rate limiting через Redis
 
 **Зависимости (Dependencies):**
@@ -72,7 +72,7 @@
 - Device fingerprinting в `Session` модели
 - Session rotation implemented
 
-### Token Security  
+### Token Security
 - Короткие access tokens (15 мин)
 - Refresh rotation с blacklisting
 - Reuse detection для безопасности
@@ -94,7 +94,7 @@ platform-authorization-next/
 ├── app/
 │   ├── config/          # Настройки и конфигурация
 │   ├── models/          # SQLAlchemy модели
-│   ├── schemas/         # Pydantic схемы  
+│   ├── schemas/         # Pydantic схемы
 │   ├── services/        # Бизнес-логика
 │   ├── policies/        # Система авторизации
 │   ├── middleware/      # FastAPI middleware
@@ -118,12 +118,12 @@ platform-authorization-next/
 - `POST /api/v1/auth/logout-all` - Выход отовсюду
 - `POST /api/v1/auth/password-reset/*` - Сброс пароля
 
-### Users  
+### Users
 - `GET /api/v1/users/` - Список с авторизацией
 - `GET/PUT/DELETE /api/v1/users/{id}` - CRUD с политиками
 
 ### Organizations
-- `GET/POST /api/v1/organizations/` - Управление организациями  
+- `GET/POST /api/v1/organizations/` - Управление организациями
 - `GET /api/v1/organizations/{id}/members` - Члены организации
 
 ### Sessions
@@ -156,7 +156,7 @@ async def update_user(user_id: int, current_user: User = Depends(get_current_act
 ### Множественные типы аутентификации
 ```python
 # Браузер: автоматические cookies + CSRF
-# API: Authorization: Bearer <jwt>  
+# API: Authorization: Bearer <jwt>
 # Машины: X-API-Key: pauth_xxx...
 # Все обрабатывается автоматически в dependencies
 ```
@@ -168,7 +168,7 @@ async def update_user(user_id: int, current_user: User = Depends(get_current_act
 - Secure cookies в production
 - Rate limiting included
 
-### Monitoring & Logging  
+### Monitoring & Logging
 - Health check endpoint `/health`
 - Request timing headers
 - Structured logging ready
@@ -182,14 +182,14 @@ async def update_user(user_id: int, current_user: User = Depends(get_current_act
 
 ## 🎖️ Соответствие требованиям
 
-✅ **Модель доступа** - Organizations, Users, Memberships, Roles полностью реализованы  
-✅ **Политики** - Система can?() с декораторами и guard helpers  
-✅ **Browser AuthN** - Cookie-сессии + CSRF, никаких JWT  
-✅ **Mobile AuthN** - JWT access + refresh с ротацией  
-✅ **API Keys** - prefix_xxx... с хэшами и scope'ами  
-✅ **OAuth support** - Модели и каркас готовы  
-✅ **Token management** - JWK-сет, ротация, revocation  
-✅ **Pipeline** - Middleware для browsers/api/channels  
-✅ **Security** - CSRF, rate limiting, session management  
+✅ **Модель доступа** - Organizations, Users, Memberships, Roles полностью реализованы
+✅ **Политики** - Система can?() с декораторами и guard helpers
+✅ **Browser AuthN** - Cookie-сессии + CSRF, никаких JWT
+✅ **Mobile AuthN** - JWT access + refresh с ротацией
+✅ **API Keys** - prefix_xxx... с хэшами и scope'ами
+✅ **OAuth support** - Модели и каркас готовы
+✅ **Token management** - JWK-сет, ротация, revocation
+✅ **Pipeline** - Middleware для browsers/api/channels
+✅ **Security** - CSRF, rate limiting, session management
 
 Архитектура полностью соответствует современным трендам безопасности и готова для production использования.

@@ -60,19 +60,19 @@ class MCPOAuthClient:
         self.client_secret = client_secret
         self.auth_server_base = auth_server_base
         self.redirect_uri = "http://localhost:8000/oauth/callback"
-    
+
     def get_authorization_url(self):
         """Generate authorization URL with PKCE."""
-        
+
         # Generate PKCE parameters
         code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8').rstrip('=')
         code_challenge = base64.urlsafe_b64encode(
             hashlib.sha256(code_verifier.encode()).digest()
         ).decode('utf-8').rstrip('=')
-        
+
         # Store code_verifier for later use
         self.code_verifier = code_verifier
-        
+
         params = {
             'response_type': 'code',
             'client_id': self.client_id,
@@ -82,12 +82,12 @@ class MCPOAuthClient:
             'code_challenge': code_challenge,
             'code_challenge_method': 'S256'
         }
-        
+
         return f"{self.auth_server_base}/oauth/authorize?{urllib.parse.urlencode(params)}"
-    
+
     def exchange_code(self, code):
         """Exchange authorization code for access token."""
-        
+
         data = {
             'grant_type': 'authorization_code',
             'client_id': self.client_id,
@@ -96,39 +96,39 @@ class MCPOAuthClient:
             'redirect_uri': self.redirect_uri,
             'code_verifier': self.code_verifier
         }
-        
+
         response = requests.post(
             f"{self.auth_server_base}/oauth/token",
             data=data
         )
-        
+
         return response.json()
-    
+
     def get_user_info(self, access_token):
         """Get user information using access token."""
-        
+
         headers = {'Authorization': f'Bearer {access_token}'}
-        
+
         response = requests.get(
             f"{self.auth_server_base}/oauth/userinfo",
             headers=headers
         )
-        
+
         return response.json()
-    
+
     def make_api_call(self, access_token, endpoint):
         """Make authenticated API call."""
-        
+
         headers = {
             'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json'
         }
-        
+
         response = requests.get(
             f"https://api.yourplatform.com/api/v1{endpoint}",
             headers=headers
         )
-        
+
         return response.json()
 
 # Usage example
@@ -171,48 +171,48 @@ class AuthenticatedMCPServer:
         self.oauth_client = oauth_client
         self.access_token = None
         self.user_info = None
-    
+
     async def initialize(self):
         """Initialize MCP server with OAuth authentication."""
-        
+
         # Get authorization (в реальном приложении через browser/redirect)
         auth_url = self.oauth_client.get_authorization_url()
         print(f"Please authorize at: {auth_url}")
-        
+
         # Simulate getting authorization code
         code = input("Enter authorization code: ")
-        
+
         # Exchange for tokens
         tokens = self.oauth_client.exchange_code(code)
         self.access_token = tokens['access_token']
-        
+
         # Get user info
         self.user_info = self.oauth_client.get_user_info(self.access_token)
         print(f"Authenticated as: {self.user_info['email']}")
-    
+
     async def handle_list_files(self, organization_id):
         """MCP tool: List files for organization."""
-        
+
         if not self.access_token:
             raise Exception("Not authenticated")
-        
+
         # Check if user has access to organization
         orgs = self.oauth_client.make_api_call(
-            self.access_token, 
+            self.access_token,
             '/organizations/'
         )
-        
+
         user_org_ids = [org['organization']['id'] for org in orgs['organizations']]
-        
+
         if organization_id not in user_org_ids:
             raise Exception(f"No access to organization {organization_id}")
-        
+
         # Get users in organization (example API call)
         users = self.oauth_client.make_api_call(
             self.access_token,
             f'/users/?organization_id={organization_id}'
         )
-        
+
         return {
             "files": [
                 {
@@ -222,13 +222,13 @@ class AuthenticatedMCPServer:
                 for user in users['users']
             ]
         }
-    
+
     async def handle_get_user_profile(self):
         """MCP tool: Get current user profile."""
-        
+
         if not self.user_info:
             raise Exception("Not authenticated")
-        
+
         return self.user_info
 
 # MCP Server main
@@ -236,17 +236,17 @@ async def main():
     # Initialize OAuth client
     oauth_client = MCPOAuthClient(
         client_id="oauth_abc123...",
-        client_secret="secret_xyz789...", 
+        client_secret="secret_xyz789...",
         auth_server_base="https://auth.yourplatform.com/api/v1"
     )
-    
+
     # Initialize authenticated MCP server
     mcp_server = AuthenticatedMCPServer(oauth_client)
     await mcp_server.initialize()
-    
+
     # Now MCP server can make authenticated API calls
     # and provide tools that respect user permissions
-    
+
     print("MCP Server ready with OAuth authentication!")
 
 if __name__ == "__main__":
@@ -258,7 +258,7 @@ if __name__ == "__main__":
 ```python
 AVAILABLE_SCOPES = {
     "profile": "Access to user profile information",
-    "email": "Access to user email address", 
+    "email": "Access to user email address",
     "organizations": "Access to user's organizations",
     "users:read": "Read access to users",
     "users:write": "Write access to users",
@@ -301,7 +301,7 @@ def refresh_access_token(refresh_token):
         'client_secret': client_secret,
         'refresh_token': refresh_token
     }
-    
+
     response = requests.post(f"{auth_server_base}/oauth/token", data=data)
     return response.json()
 
@@ -312,7 +312,7 @@ def revoke_token(access_token):
         'client_id': client_id,
         'client_secret': client_secret
     }
-    
+
     response = requests.post(f"{auth_server_base}/oauth/revoke", data=data)
     return response.status_code == 200
 ```

@@ -149,12 +149,12 @@ class PlatformAuthAPI:
             'X-API-Key': api_key,
             'Content-Type': 'application/json'
         }
-    
+
     def get_users(self, organization_id=None):
         params = {}
         if organization_id:
             params['organization_id'] = organization_id
-            
+
         response = requests.get(
             f'{self.base_url}/api/v1/users/',
             headers=self.headers,
@@ -230,7 +230,7 @@ await fetch('/api/v1/sessions/other', {
 ```bash
 # Rate limits applied automatically:
 # - IP-based: 60 req/min
-# - User-based: 120 req/min 
+# - User-based: 120 req/min
 # - API key-based: 300 req/min
 
 # Rate limit headers in response:
@@ -260,7 +260,7 @@ const orgs = await fetch('/api/v1/organizations/', {
 ```javascript
 async function apiCall(url, options) {
   const response = await fetch(url, options);
-  
+
   if (response.status === 401) {
     // Token expired - try refresh
     await refreshToken();
@@ -274,7 +274,7 @@ async function apiCall(url, options) {
     await sleep(retryAfter * 1000);
     // Retry request
   }
-  
+
   return response.json();
 }
 ```

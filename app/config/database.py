@@ -32,7 +32,7 @@ def get_async_engine():
 
 
 def get_sync_engine():
-    """Get or create sync engine.""" 
+    """Get or create sync engine."""
     global sync_engine
     if sync_engine is None:
         sync_engine = create_engine(
@@ -66,6 +66,7 @@ def get_session_local():
             autoflush=False,
         )
     return SessionLocal
+
 
 # Redis connection
 redis_pool = None
