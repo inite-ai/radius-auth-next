@@ -52,21 +52,33 @@ class TokenExpiredError(AuthenticationError):
     """Raised when a token has expired."""
     
     def __init__(self, message: str = "Token has expired", **kwargs):
-        super().__init__(message, error_code="TOKEN_EXPIRED", **kwargs)
+        # Remove error_code from kwargs to avoid conflict
+        kwargs.pop('error_code', None)
+        super().__init__(message, **kwargs)
+        # Set error_code directly after initialization
+        self.error_code = "TOKEN_EXPIRED"
 
 
 class InvalidTokenError(AuthenticationError):
     """Raised when a token is invalid."""
     
     def __init__(self, message: str = "Invalid token", **kwargs):
-        super().__init__(message, error_code="INVALID_TOKEN", **kwargs)
+        # Remove error_code from kwargs to avoid conflict
+        kwargs.pop('error_code', None)
+        super().__init__(message, **kwargs)
+        # Set error_code directly after initialization
+        self.error_code = "INVALID_TOKEN"
 
 
 class AccountLockedError(AuthenticationError):
     """Raised when account is locked."""
     
     def __init__(self, message: str = "Account is locked", **kwargs):
-        super().__init__(message, error_code="ACCOUNT_LOCKED", **kwargs)
+        # Remove error_code from kwargs to avoid conflict
+        kwargs.pop('error_code', None)
+        super().__init__(message, **kwargs)
+        # Set error_code directly after initialization
+        self.error_code = "ACCOUNT_LOCKED"
 
 
 class InsufficientPermissionsError(AuthorizationError):

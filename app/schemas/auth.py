@@ -21,6 +21,7 @@ class LoginResponse(BaseResponse):
     
     user: "UserProfile"
     tokens: Optional["TokenResponse"] = None  # Optional for browser clients
+    device_info: Optional[dict] = None  # Device information for mobile clients
 
 
 class TokenResponse(BaseModel):

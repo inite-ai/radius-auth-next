@@ -3,6 +3,7 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,15 +16,20 @@ from app.utils.exceptions import AuthenticationError, ValidationError
 router = APIRouter()
 
 
+class OAuthClientCreateRequest(BaseModel):
+    """Request model for OAuth client creation."""
+    name: str
+    redirect_uris: List[str]
+    allowed_scopes: List[str]
+    description: Optional[str] = None
+    is_confidential: bool = True
+
+
 # ==================== CLIENT MANAGEMENT ====================
 
 @router.post("/clients")
 async def create_oauth_client(
-    name: str,
-    redirect_uris: List[str],
-    allowed_scopes: List[str],
-    description: Optional[str] = None,
-    is_confidential: bool = True,
+    request: OAuthClientCreateRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -33,12 +39,12 @@ async def create_oauth_client(
     
     try:
         client, client_secret = await oauth_service.create_client(
-            name=name,
-            redirect_uris=redirect_uris,
-            allowed_scopes=allowed_scopes,
-            description=description,
-            is_confidential=is_confidential,
-            owner_user_id=current_user.id,
+            name=request.name,
+            redirect_uris=request.redirect_uris,
+            allowed_scopes=request.allowed_scopes,
+            description=request.description,
+            is_confidential=request.is_confidential,
+            user_id=current_user.id,
         )
         
         return {
@@ -76,7 +82,7 @@ async def list_oauth_clients(
     
     result = await db.execute(
         select(OAuthClient).where(
-            OAuthClient.owner_user_id == current_user.id,
+            OAuthClient.user_id == current_user.id,
             OAuthClient.is_active == True,
         ).order_by(OAuthClient.created_at.desc())
     )
@@ -113,7 +119,7 @@ async def delete_oauth_client(
     result = await db.execute(
         select(OAuthClient).where(
             OAuthClient.client_id == client_id,
-            OAuthClient.owner_user_id == current_user.id,
+            OAuthClient.user_id == current_user.id,
         )
     )
     client = result.scalar_one_or_none()

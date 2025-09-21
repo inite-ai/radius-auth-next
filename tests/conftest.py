@@ -100,24 +100,28 @@ async def async_client() -> AsyncGenerator[AsyncClient, None]:
 @pytest.fixture
 def test_user_data():
     """Test user data."""
+    import uuid
+    unique_id = str(uuid.uuid4())[:8]
     return {
-        "email": "test@example.com",
+        "email": f"test_{unique_id}@example.com",
         "password": "TestPassword123!",
         "first_name": "Test",
         "last_name": "User",
-        "username": "testuser",
+        "username": f"testuser_{unique_id}",
     }
 
 
 @pytest.fixture
 def admin_user_data():
     """Admin user data."""
+    import uuid
+    unique_id = str(uuid.uuid4())[:8]
     return {
-        "email": "admin@example.com",
+        "email": f"admin_{unique_id}@example.com",
         "password": "AdminPassword123!",
         "first_name": "Admin",
         "last_name": "User",
-        "username": "admin",
+        "username": f"admin_{unique_id}",
         "is_superuser": True,
     }
 
@@ -180,10 +184,29 @@ async def create_test_user(test_user_data):
             print(f"Error creating test user: {e}")
             raise
         finally:
-            # Clean up: delete the user after test
+            # Clean up will happen after the test finishes, not immediately after yield
+            pass
+    
+    # Clean up user after test finishes
+    async with session_local() as cleanup_session:
+        try:
+            # Delete related sessions first (cascade should handle this, but be explicit)
+            from app.models.session import Session
+            from sqlalchemy import select
+            sessions_result = await cleanup_session.execute(
+                select(Session).where(Session.user_id == user.id)
+            )
+            sessions = sessions_result.scalars().all()
+            for session in sessions:
+                await cleanup_session.delete(session)
+            
+            # Delete the user
+            await cleanup_session.delete(user)
+            await cleanup_session.commit()
+        except Exception as cleanup_error:
+            print(f"Error during cleanup: {cleanup_error}")
             try:
-                await db_session.delete(user)
-                await db_session.commit()
+                await cleanup_session.rollback()
             except:
                 pass
 
@@ -198,6 +221,11 @@ async def create_admin_user(admin_user_data):
     
     user_data = admin_user_data.copy()
     password = user_data.pop("password")
+    
+    # Remove fields that we'll set explicitly
+    user_data.pop("is_superuser", None)
+    user_data.pop("is_verified", None)
+    user_data.pop("is_active", None)
     
     session_local = get_async_session_local()
     async with session_local() as db_session:
@@ -314,7 +342,7 @@ async def create_oauth_client(db_session, oauth_client_data, create_admin_user):
         allowed_scopes=oauth_client_data["allowed_scopes"],
         description=oauth_client_data["description"],
         is_confidential=oauth_client_data["is_confidential"],
-        owner_user_id=create_admin_user.id,
+        user_id=create_admin_user.id,
     )
     
     # Add client secret for testing
@@ -344,6 +372,7 @@ async def create_api_key(create_test_user):
             key_hash=key_hash,
             prefix="test",
             scopes_list=["profile", "organizations"],
+            rate_limit_per_minute=100,  # High limit to avoid rate limiting in usage tests
         )
         
         db_session.add(api_key_record)
@@ -354,6 +383,145 @@ async def create_api_key(create_test_user):
         api_key_record.api_key = api_key
         
         return api_key_record
+
+
+@pytest_asyncio.fixture
+async def create_api_key_with_low_rate_limit(create_test_user):
+    """Create an API key with low rate limit for rate limiting tests."""
+    from app.models.api_key import APIKey
+    from app.utils.security import generate_api_key, hash_token
+    from app.config.database import get_async_session_local
+
+    # Generate API key
+    api_key = generate_api_key(prefix="test", length=32)
+    key_hash = hash_token(api_key)
+    
+    # Create API key record with low rate limit
+    session_local = get_async_session_local()
+    async with session_local() as db_session:
+        api_key_record = APIKey(
+            user_id=create_test_user.id,
+            name="Test API Key",
+            key_hash=key_hash,
+            prefix="test",
+            scopes_list=["profile", "organizations"],
+            rate_limit_per_minute=2,  # Very low limit for rate limiting tests
+        )
+        
+        db_session.add(api_key_record)
+        await db_session.commit()
+        await db_session.refresh(api_key_record)
+        
+        # Add actual key for testing
+        api_key_record.api_key = api_key
+        
+        return api_key_record
+
+
+# Database session for tests
+@pytest_asyncio.fixture
+async def db_session():
+    """Create async database session for testing."""
+    from app.config.database import get_async_session_local
+    
+    session_local = get_async_session_local()
+    async with session_local() as session:
+        yield session
+
+
+@pytest_asyncio.fixture
+async def mock_redis():
+    """Mock Redis for rate limiting tests."""
+    # Shared counter to track requests per client across all pipeline instances
+    request_counters = {}
+    
+    class MockRedis:
+        def __init__(self):
+            self.counters = request_counters
+            
+        def clear_counters(self):
+            """Clear all request counters for fresh test."""
+            self.counters.clear()
+            
+        def pipeline(self):
+            return MockPipeline(self.counters)
+    
+    class MockPipeline:
+        def __init__(self, counters):
+            self.operations = []
+            self.key = None
+            self.counters = counters
+            
+        def __aenter__(self):
+            return self
+            
+        def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+            
+        def zremrangebyscore(self, key, min_score, max_score):
+            self.key = key
+            self.operations.append(('zremrangebyscore', key, min_score, max_score))
+            return self
+            
+        def zcard(self, key):
+            self.key = key
+            self.operations.append(('zcard', key))
+            return self
+            
+        def zadd(self, key, mapping):
+            self.key = key
+            self.operations.append(('zadd', key, mapping))
+            return self
+            
+        def expire(self, key, seconds):
+            self.operations.append(('expire', key, seconds))
+            return self
+            
+        async def execute(self):
+            # Simplified mock that just increments counter for each request
+            # The middleware expects: [removed_count, current_count, added_count, expire_result]
+            
+            # Find the key from operations
+            key = None
+            for op, *args in self.operations:
+                if args:
+                    key = args[0]
+                    break
+            
+            if not key:
+                return [0, 0, 1, 1]  # Default response
+            
+            # Initialize counter if not exists
+            if key not in self.counters:
+                self.counters[key] = 0
+            
+            # Get current count BEFORE increment
+            current_count = self.counters[key]
+            
+            # Increment for this request
+            self.counters[key] += 1
+            
+            # Return results in order: zremrangebyscore, zcard, zadd, expire
+            return [0, current_count, 1, 1]
+    
+    # Mock get_redis function
+    import app.config.database
+    original_get_redis = app.config.database.get_redis
+    
+    # Create fresh MockRedis instance for each test
+    redis_instance = MockRedis()
+    
+    async def mock_get_redis():
+        return redis_instance
+    
+    app.config.database.get_redis = mock_get_redis
+    
+    yield redis_instance
+    
+    # Restore original
+    app.config.database.get_redis = original_get_redis
+
+
 
 
 # Event loop for session scope

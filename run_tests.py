@@ -61,7 +61,7 @@ def main():
     args = parser.parse_args()
     
     # Base pytest command
-    cmd = ["python", "-m", "pytest"]
+    cmd = ["python3", "-m", "pytest"]
     
     # Add test path based on type
     if args.test_type == "all":

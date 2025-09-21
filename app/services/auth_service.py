@@ -162,15 +162,19 @@ class AuthService:
     ) -> Dict[str, str]:
         """Refresh access and refresh tokens."""
         
-        # Validate refresh token
-        try:
-            payload = self.jwt_service.decode_refresh_token(refresh_token)
-            session_id = payload["session_id"]
-        except Exception as e:
-            raise InvalidTokenError(f"Invalid refresh token: {e}")
-        
-        # Get session
+        # Try to get session by refresh token directly first (for mobile sessions)
         session = await self.session_service.get_session_by_refresh_token(refresh_token)
+        
+        # If not found, try to decode as JWT refresh token (for web/OAuth sessions)
+        if not session:
+            try:
+                payload = self.jwt_service.decode_refresh_token(refresh_token)
+                session_id = payload["session_id"]
+                # Try to find session by session_id from JWT
+                session = await self.session_service.get_session_by_id(session_id)
+            except Exception as e:
+                raise InvalidTokenError(f"Invalid refresh token: {e}")
+        
         if not session:
             raise InvalidTokenError("Session not found or expired")
         
@@ -206,6 +210,12 @@ class AuthService:
     async def logout(self, refresh_token: str) -> None:
         """Logout user by revoking session."""
         session = await self.session_service.get_session_by_refresh_token(refresh_token)
+        if session:
+            await self.session_service.revoke_session(session)
+    
+    async def logout_session_by_id(self, session_id: int, user_id: int) -> None:
+        """Logout user by revoking session by session_id (primary key)."""
+        session = await self.session_service.get_session_by_id(session_id, user_id)
         if session:
             await self.session_service.revoke_session(session)
     

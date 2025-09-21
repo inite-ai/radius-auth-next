@@ -24,6 +24,8 @@ def detect_client_type(user_agent: Optional[str], accept_header: Optional[str] =
         r'dart/',
         r'kotlin',
         r'swift/',
+        # Pattern for mobile app user agents like "MyApp/1.0 (Android; ...)" or "TestApp/1.0 (iOS; ...)"
+        r'\w+app/[\d.]+\s*\((android|ios)',
     ]
     
     for pattern in mobile_patterns:
@@ -93,23 +95,23 @@ def get_device_info(user_agent: Optional[str]) -> Tuple[Optional[str], Optional[
     
     # Mobile devices
     if any(pattern in user_agent_lower for pattern in ['iphone', 'ios']):
-        device_type = "iOS"
+        device_type = "mobile"
         device_name = "iPhone/iPad"
     elif 'android' in user_agent_lower:
-        device_type = "Android"
+        device_type = "mobile"
         device_name = "Android Device"
     elif any(pattern in user_agent_lower for pattern in ['windows', 'win32', 'win64']):
-        device_type = "Desktop"
+        device_type = "web"
         device_name = "Windows PC"
     elif any(pattern in user_agent_lower for pattern in ['macintosh', 'mac os']):
-        device_type = "Desktop"
+        device_type = "web"
         device_name = "Mac"
     elif 'linux' in user_agent_lower:
-        device_type = "Desktop"
+        device_type = "web"
         device_name = "Linux PC"
     
     # Browser detection for device name refinement
-    if device_type == "Desktop":
+    if device_type == "web":
         if 'chrome' in user_agent_lower:
             device_name += " (Chrome)"
         elif 'firefox' in user_agent_lower:

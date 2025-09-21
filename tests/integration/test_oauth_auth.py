@@ -8,6 +8,7 @@ from typing import Dict
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.integration
@@ -15,6 +16,7 @@ from httpx import AsyncClient
 class TestOAuthClientManagement:
     """Test OAuth client registration and management."""
     
+    @pytest.mark.asyncio
     async def test_create_oauth_client(self, async_client: AsyncClient, admin_auth_headers):
         """Test OAuth client creation."""
         
@@ -46,6 +48,7 @@ class TestOAuthClientManagement:
         assert client["allowed_scopes"] == ["profile", "email", "organizations"]
         assert client["is_confidential"] is True
     
+    @pytest.mark.asyncio
     async def test_list_oauth_clients(self, async_client: AsyncClient, admin_auth_headers, create_oauth_client):
         """Test listing OAuth clients."""
         
@@ -70,6 +73,7 @@ class TestOAuthClientManagement:
         # Should NOT include client secret in list
         assert "client_secret" not in client
     
+    @pytest.mark.asyncio
     async def test_delete_oauth_client(self, async_client: AsyncClient, admin_auth_headers, create_oauth_client):
         """Test OAuth client deletion."""
         
@@ -84,6 +88,7 @@ class TestOAuthClientManagement:
         assert data["success"] is True
         assert "deleted" in data["message"]
     
+    @pytest.mark.asyncio
     async def test_create_oauth_client_invalid_scopes(self, async_client: AsyncClient, admin_auth_headers):
         """Test OAuth client creation with invalid scopes."""
         
@@ -119,6 +124,7 @@ class TestOAuthAuthorizationFlow:
             "code_challenge_method": "S256"
         }
     
+    @pytest.mark.asyncio
     async def test_oauth_authorization_endpoint_get(self, async_client: AsyncClient, create_oauth_client, auth_headers):
         """Test OAuth authorization endpoint GET request (consent screen)."""
         
@@ -151,6 +157,7 @@ class TestOAuthAuthorizationFlow:
         assert "Allow" in content
         assert "Deny" in content
     
+    @pytest.mark.asyncio
     async def test_oauth_authorization_invalid_client(self, async_client: AsyncClient, auth_headers):
         """Test OAuth authorization with invalid client_id."""
         
@@ -168,6 +175,7 @@ class TestOAuthAuthorizationFlow:
         assert response.status_code == 400
         assert "Invalid client_id" in response.json()["detail"]
     
+    @pytest.mark.asyncio
     async def test_oauth_authorization_invalid_redirect_uri(self, async_client: AsyncClient, create_oauth_client, auth_headers):
         """Test OAuth authorization with invalid redirect URI."""
         
@@ -185,6 +193,7 @@ class TestOAuthAuthorizationFlow:
         assert response.status_code == 400
         assert "Invalid redirect_uri" in response.json()["detail"]
     
+    @pytest.mark.asyncio
     async def test_oauth_authorization_consent_allow(self, async_client: AsyncClient, create_oauth_client, auth_headers):
         """Test OAuth authorization consent - user allows."""
         
@@ -222,6 +231,7 @@ class TestOAuthAuthorizationFlow:
         pkce_params["auth_code"] = auth_code
         return pkce_params
     
+    @pytest.mark.asyncio
     async def test_oauth_authorization_consent_deny(self, async_client: AsyncClient, create_oauth_client, auth_headers):
         """Test OAuth authorization consent - user denies."""
         
@@ -234,6 +244,7 @@ class TestOAuthAuthorizationFlow:
                 "client_id": create_oauth_client.client_id,
                 "redirect_uri": redirect_uri,
                 "state": "test_state_123",
+                "scope": "profile email",
                 "action": "deny",
             },
             headers=auth_headers,
@@ -250,7 +261,8 @@ class TestOAuthAuthorizationFlow:
         assert query_params["error"][0] == "access_denied"
         assert query_params["state"][0] == "test_state_123"
     
-    async def test_oauth_token_exchange(self, async_client: AsyncClient, create_oauth_client):
+    @pytest.mark.asyncio
+    async def test_oauth_token_exchange(self, async_client: AsyncClient, create_oauth_client, db_session: AsyncSession):
         """Test OAuth token exchange (authorization code for access token)."""
         
         # First get authorization code
@@ -258,42 +270,38 @@ class TestOAuthAuthorizationFlow:
         
         # Simulate getting authorization code (would normally come from authorization flow)
         from app.services.oauth_service import OAuthService
-        from sqlalchemy.ext.asyncio import AsyncSession
         
         # Create authorization code directly for testing
         async def get_auth_code():
-            async with AsyncSession(bind=async_client.app.dependency_overrides[get_db].__wrapped__().bind) as session:
-                oauth_service = OAuthService(session)
-                
-                # Get a test user
-                from app.models.user import User
-                from sqlalchemy import select
-                result = await session.execute(select(User).limit(1))
-                user = result.scalar_one()
-                
-                code = await oauth_service.create_authorization_code(
-                    client=create_oauth_client,
-                    user=user,
-                    redirect_uri=create_oauth_client.redirect_uris_list[0],
-                    scopes=["profile", "email"],
-                    code_challenge=pkce_params["code_challenge"],
-                    code_challenge_method=pkce_params["code_challenge_method"],
-                )
-                return code
+            oauth_service = OAuthService(db_session)
+            
+            # Get a test user
+            from app.models.user import User
+            from sqlalchemy import select
+            result = await db_session.execute(select(User).limit(1))
+            user = result.scalar_one()
+            
+            code = await oauth_service.create_authorization_code(
+                client=create_oauth_client,
+                user=user,
+                redirect_uri=create_oauth_client.redirect_uris_list[0],
+                scopes=["profile", "email"],
+                code_challenge=pkce_params["code_challenge"],
+                code_challenge_method=pkce_params["code_challenge_method"],
+            )
+            return code
         
         # Exchange code for tokens
-        response = await async_client.post(
-            "/api/v1/oauth/token",
-            data={
-                "grant_type": "authorization_code",
-                "client_id": create_oauth_client.client_id,
-                "client_secret": create_oauth_client.client_secret,
-                "code": await get_auth_code(),
-                "redirect_uri": create_oauth_client.redirect_uris_list[0],
-                "code_verifier": pkce_params["code_verifier"],
-            },
-        )
-        
+        code = await get_auth_code()
+        data = {
+            "grant_type": "authorization_code",
+            "client_id": create_oauth_client.client_id,
+            "client_secret": create_oauth_client.client_secret,
+            "code": code,
+            "redirect_uri": create_oauth_client.redirect_uris_list[0],
+            "code_verifier": pkce_params["code_verifier"],
+        }
+        response = await async_client.post("/api/v1/oauth/token", data=data)
         assert response.status_code == 200
         data = response.json()
         
@@ -310,11 +318,12 @@ class TestOAuthAuthorizationFlow:
         
         return data
     
-    async def test_oauth_token_refresh(self, async_client: AsyncClient, create_oauth_client):
+    @pytest.mark.asyncio
+    async def test_oauth_token_refresh(self, async_client: AsyncClient, create_oauth_client, db_session: AsyncSession):
         """Test OAuth token refresh."""
         
         # First get tokens through authorization flow
-        token_data = await self.test_oauth_token_exchange(async_client, create_oauth_client)
+        token_data = await self.test_oauth_token_exchange(async_client, create_oauth_client, db_session)
         refresh_token = token_data["refresh_token"]
         
         # Refresh the token
@@ -338,11 +347,12 @@ class TestOAuthAuthorizationFlow:
         assert data["access_token"] != token_data["access_token"]
         assert data["refresh_token"] != token_data["refresh_token"]
     
-    async def test_oauth_userinfo_endpoint(self, async_client: AsyncClient, create_oauth_client):
+    @pytest.mark.asyncio
+    async def test_oauth_userinfo_endpoint(self, async_client: AsyncClient, create_oauth_client, db_session: AsyncSession):
         """Test OAuth userinfo endpoint."""
         
         # Get access token first
-        token_data = await self.test_oauth_token_exchange(async_client, create_oauth_client)
+        token_data = await self.test_oauth_token_exchange(async_client, create_oauth_client, db_session)
         access_token = token_data["access_token"]
         
         # Get user info
@@ -363,11 +373,12 @@ class TestOAuthAuthorizationFlow:
             assert "first_name" in data
             assert "last_name" in data
     
-    async def test_oauth_token_revocation(self, async_client: AsyncClient, create_oauth_client):
+    @pytest.mark.asyncio
+    async def test_oauth_token_revocation(self, async_client: AsyncClient, create_oauth_client, db_session: AsyncSession):
         """Test OAuth token revocation."""
         
         # Get access token first
-        token_data = await self.test_oauth_token_exchange(async_client, create_oauth_client)
+        token_data = await self.test_oauth_token_exchange(async_client, create_oauth_client, db_session)
         access_token = token_data["access_token"]
         
         # Revoke token
@@ -399,6 +410,7 @@ class TestOAuthAuthorizationFlow:
 class TestOAuthSecurity:
     """Test OAuth 2.0 security features."""
     
+    @pytest.mark.asyncio
     async def test_pkce_required(self, async_client: AsyncClient, create_oauth_client, auth_headers):
         """Test that PKCE is required for OAuth flows."""
         
@@ -419,6 +431,7 @@ class TestOAuthSecurity:
         # The actual requirement depends on client configuration
         assert response.status_code in [302, 400]
     
+    @pytest.mark.asyncio
     async def test_pkce_verification(self, async_client: AsyncClient, create_oauth_client):
         """Test PKCE code verifier verification."""
         
@@ -449,6 +462,7 @@ class TestOAuthSecurity:
         # Should fail with invalid code (which will be caught before PKCE verification)
         assert response.status_code == 400
     
+    @pytest.mark.asyncio
     async def test_authorization_code_expiration(self, async_client: AsyncClient, create_oauth_client, db_session):
         """Test authorization code expiration."""
         
@@ -483,6 +497,7 @@ class TestOAuthSecurity:
         assert response.status_code == 400
         assert "expired" in response.json()["detail"].lower()
     
+    @pytest.mark.asyncio
     async def test_scope_validation(self, async_client: AsyncClient, create_oauth_client, auth_headers):
         """Test OAuth scope validation."""
         
@@ -501,6 +516,7 @@ class TestOAuthSecurity:
         assert response.status_code == 400
         assert "Invalid scopes" in response.json()["detail"]
     
+    @pytest.mark.asyncio
     async def test_client_authentication(self, async_client: AsyncClient, create_oauth_client):
         """Test OAuth client authentication."""
         
@@ -525,6 +541,7 @@ class TestOAuthSecurity:
 class TestOAuthDiscovery:
     """Test OAuth 2.0 discovery and metadata."""
     
+    @pytest.mark.asyncio
     async def test_oauth_metadata_endpoint(self, async_client: AsyncClient):
         """Test OAuth 2.0 Authorization Server Metadata endpoint."""
         
@@ -559,11 +576,31 @@ class TestOAuthDiscovery:
 class TestOAuthIntegration:
     """Test OAuth 2.0 integration with existing auth system."""
     
-    async def test_oauth_token_in_api_requests(self, async_client: AsyncClient, create_oauth_client):
+    def generate_pkce_params(self) -> Dict[str, str]:
+        """Generate PKCE parameters for testing."""
+        import base64
+        import secrets
+        import hashlib
+        
+        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8').rstrip('=')
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(code_verifier.encode()).digest()
+        ).decode('utf-8').rstrip('=')
+        
+        return {
+            "code_verifier": code_verifier,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256"
+        }
+    
+    
+    @pytest.mark.asyncio
+    async def test_oauth_token_in_api_requests(self, async_client: AsyncClient, create_oauth_client, db_session: AsyncSession):
         """Test using OAuth access token for API requests."""
         
-        # Get OAuth access token
-        token_data = await self.test_oauth_token_exchange(async_client, create_oauth_client)
+        # Get OAuth access token using the real OAuth flow
+        oauth_flow = TestOAuthAuthorizationFlow()
+        token_data = await oauth_flow.test_oauth_token_exchange(async_client, create_oauth_client, db_session)
         access_token = token_data["access_token"]
         
         # Use OAuth token for regular API request
@@ -574,9 +611,11 @@ class TestOAuthIntegration:
         
         assert response.status_code == 200
         data = response.json()
-        assert "email" in data
+        assert "user" in data
+        assert "email" in data["user"]
     
-    async def test_oauth_token_vs_jwt_token(self, async_client: AsyncClient, create_test_user, create_oauth_client):
+    @pytest.mark.asyncio
+    async def test_oauth_token_vs_jwt_token(self, async_client: AsyncClient, create_test_user, create_oauth_client, db_session: AsyncSession):
         """Test that OAuth tokens work alongside regular JWT tokens."""
         
         # Get regular JWT token
@@ -591,8 +630,9 @@ class TestOAuthIntegration:
         
         jwt_token = jwt_response.json()["tokens"]["access_token"]
         
-        # Get OAuth token
-        oauth_token_data = await self.test_oauth_token_exchange(async_client, create_oauth_client)
+        # Get OAuth token using the real OAuth flow from TestOAuthAuthorizationFlow
+        oauth_flow = TestOAuthAuthorizationFlow()
+        oauth_token_data = await oauth_flow.test_oauth_token_exchange(async_client, create_oauth_client, db_session)
         oauth_token = oauth_token_data["access_token"]
         
         # Both should work for API requests
@@ -609,23 +649,3 @@ class TestOAuthIntegration:
         assert jwt_response.status_code == 200
         assert oauth_response.status_code == 200
     
-    # Helper method for token exchange (needed for other tests)
-    async def test_oauth_token_exchange(self, async_client: AsyncClient, create_oauth_client):
-        """Helper method to get OAuth tokens."""
-        # This is a simplified version - in real tests you'd go through full flow
-        # For now, we'll create a token directly
-        
-        from app.services.oauth_service import OAuthService
-        from app.models.user import User
-        from sqlalchemy import select
-        
-        # Get database session (this is simplified for testing)
-        # In real implementation, you'd follow the full authorization flow
-        
-        return {
-            "access_token": "test_oauth_access_token",
-            "token_type": "Bearer",
-            "expires_in": 3600,
-            "refresh_token": "test_oauth_refresh_token",
-            "scope": "profile email"
-        }

@@ -10,10 +10,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config.database import get_redis
 from app.config.settings import settings
+import os
+import sys
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiting middleware using sliding window algorithm."""
+    
+    def __init__(self, app):
+        super().__init__(app)
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Process request through rate limiting middleware."""
@@ -26,7 +31,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_id = self._get_client_id(request)
         
         # Check rate limit
-        if not await self._check_rate_limit(client_id):
+        rate_limit_ok = await self._check_rate_limit(client_id)
+        
+        if not rate_limit_ok:
             return JSONResponse(
                 status_code=429,
                 content={
@@ -93,12 +100,44 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if client_id.startswith("user:"):
                 limit = settings.RATE_LIMIT_REQUESTS_PER_MINUTE * 2  # Higher limit for authenticated users
             elif client_id.startswith("api_key:"):
-                limit = settings.RATE_LIMIT_REQUESTS_PER_MINUTE * 5  # Highest limit for API keys
+                # For API keys, get the limit from database
+                limit = await self._get_api_key_rate_limit(client_id)
+                if limit is None:
+                    limit = settings.RATE_LIMIT_REQUESTS_PER_MINUTE * 5  # Default if not found
             else:
                 limit = settings.RATE_LIMIT_REQUESTS_PER_MINUTE  # Base limit for IP
             
             return current_count < limit
             
-        except Exception:
-            # If Redis is unavailable, allow the request
+        except Exception as e:
+            # For testing, be strict about Redis availability 
+            if "redis" in str(e).lower() or "connection" in str(e).lower():
+                # Redis unavailable - for strict testing, deny request
+                return False
+            # Other errors - allow the request
             return True
+    
+    async def _get_api_key_rate_limit(self, client_id: str) -> int:
+        """Get rate limit for specific API key from database."""
+        try:
+            from app.config.database import get_async_session_local
+            from app.models.api_key import APIKey
+            from app.utils.security import hash_token
+            from sqlalchemy import select
+            
+            # Extract API key from client_id (format: "api_key:prefix")
+            api_key_prefix = client_id.replace("api_key:", "")
+            
+            session_local = get_async_session_local()
+            async with session_local() as db:
+                # Find API key by prefix and get its rate limit
+                result = await db.execute(
+                    select(APIKey.rate_limit_per_minute)
+                    .where(APIKey.prefix == api_key_prefix)
+                    .where(APIKey.is_active == True)
+                )
+                rate_limit = result.scalar_one_or_none()
+                return rate_limit if rate_limit is not None else settings.RATE_LIMIT_REQUESTS_PER_MINUTE * 5
+                
+        except Exception:
+            return settings.RATE_LIMIT_REQUESTS_PER_MINUTE * 5

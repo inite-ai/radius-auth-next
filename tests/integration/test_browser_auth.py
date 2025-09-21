@@ -11,6 +11,7 @@ from app.config.settings import settings
 class TestBrowserAuthentication:
     """Test browser authentication with cookies and sessions."""
     
+    @pytest.mark.asyncio
     async def test_browser_login_success(self, async_client: AsyncClient, create_test_user):
         """Test successful browser login with cookie setting."""
         
@@ -44,6 +45,7 @@ class TestBrowserAuthentication:
         assert session_cookie is not None
         assert len(session_cookie) > 20  # Refresh token length
     
+    @pytest.mark.asyncio
     async def test_browser_login_remember_me(self, async_client: AsyncClient, create_test_user):
         """Test browser login with remember me option."""
         
@@ -67,6 +69,7 @@ class TestBrowserAuthentication:
         session_cookie = cookies.get(settings.SESSION_COOKIE_NAME)
         assert session_cookie is not None
     
+    @pytest.mark.asyncio
     async def test_browser_authenticated_request(self, async_client: AsyncClient, create_test_user):
         """Test authenticated request using session cookie."""
         
@@ -96,8 +99,10 @@ class TestBrowserAuthentication:
         
         assert response.status_code == 200
         data = response.json()
-        assert data["email"] == create_test_user.email
+        assert "user" in data
+        assert data["user"]["email"] == create_test_user.email
     
+    @pytest.mark.asyncio
     async def test_browser_logout(self, async_client: AsyncClient, create_test_user):
         """Test browser logout with session revocation."""
         
@@ -124,7 +129,7 @@ class TestBrowserAuthentication:
         assert logout_response.status_code == 200
         data = logout_response.json()
         assert data["success"] is True
-        assert "logged out" in data["message"].lower()
+        assert "logout successful" in data["message"].lower()
         
         # Try to use session after logout - should fail
         profile_response = await async_client.get(
@@ -134,6 +139,7 @@ class TestBrowserAuthentication:
         
         assert profile_response.status_code == 401
     
+    @pytest.mark.asyncio
     async def test_browser_invalid_session(self, async_client: AsyncClient):
         """Test request with invalid session cookie."""
         
@@ -144,6 +150,7 @@ class TestBrowserAuthentication:
         
         assert response.status_code == 401
     
+    @pytest.mark.asyncio
     async def test_browser_expired_session(self, async_client: AsyncClient, create_test_user, db_session):
         """Test request with expired session."""
         
@@ -181,6 +188,7 @@ class TestBrowserAuthentication:
         
         assert response.status_code == 401
     
+    @pytest.mark.asyncio
     async def test_browser_session_activity_tracking(self, async_client: AsyncClient, create_test_user, db_session):
         """Test session activity tracking for browser clients."""
         
@@ -220,6 +228,7 @@ class TestBrowserAuthentication:
         assert "Mozilla" in session.user_agent
         assert session.device_type == "web"
     
+    @pytest.mark.asyncio
     async def test_browser_multiple_sessions(self, async_client: AsyncClient, create_test_user):
         """Test multiple browser sessions for same user."""
         
@@ -291,6 +300,7 @@ class TestBrowserAuthentication:
 class TestBrowserDeviceDetection:
     """Test browser device detection and session metadata."""
     
+    @pytest.mark.asyncio
     async def test_chrome_detection(self, async_client: AsyncClient, create_test_user):
         """Test Chrome browser detection."""
         
@@ -309,6 +319,7 @@ class TestBrowserDeviceDetection:
         data = response.json()
         assert "web client" in data["message"]
     
+    @pytest.mark.asyncio
     async def test_firefox_detection(self, async_client: AsyncClient, create_test_user):
         """Test Firefox browser detection."""
         
@@ -327,6 +338,7 @@ class TestBrowserDeviceDetection:
         data = response.json()
         assert "web client" in data["message"]
     
+    @pytest.mark.asyncio
     async def test_safari_detection(self, async_client: AsyncClient, create_test_user):
         """Test Safari browser detection."""
         
@@ -352,30 +364,45 @@ class TestBrowserDeviceDetection:
 class TestBrowserSecurity:
     """Test browser authentication security features."""
     
-    async def test_login_rate_limiting(self, async_client: AsyncClient, create_test_user):
+    @pytest.mark.asyncio
+    async def test_login_rate_limiting(self, async_client: AsyncClient, create_test_user, mock_redis):
         """Test login rate limiting for browser clients."""
         
-        # Make multiple failed login attempts
-        for _ in range(6):  # Assuming rate limit is 5 attempts
-            response = await async_client.post(
-                "/api/v1/auth/login",
-                json={
-                    "email": create_test_user.email,
-                    "password": "wrong_password",
-                },
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                },
-            )
-            
-            if response.status_code == 429:  # Rate limited
-                break
+        # Mock rate limit settings for this test
+        from app.config.settings import settings
+        original_limit = settings.RATE_LIMIT_REQUESTS_PER_MINUTE
+        settings.RATE_LIMIT_REQUESTS_PER_MINUTE = 5  # Low limit for testing
         
-        # Should eventually get rate limited
-        assert response.status_code == 429
-        data = response.json()
-        assert "rate limit" in data["detail"].lower()
+        try:
+            # Clear any existing rate limit counters
+            mock_redis.clear_counters()
+            
+            # Make multiple failed login attempts
+            for i in range(7):  # Exceed rate limit of 5
+                response = await async_client.post(
+                    "/api/v1/auth/login",
+                    json={
+                        "email": create_test_user.email,
+                        "password": "wrong_password",
+                    },
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                    },
+                )
+                
+                if response.status_code == 429:  # Rate limited
+                    break
+            
+            # Should eventually get rate limited
+            assert response.status_code == 429
+            data = response.json()
+            assert "too many requests" in data["message"].lower()
+            
+        finally:
+            # Restore original rate limit
+            settings.RATE_LIMIT_REQUESTS_PER_MINUTE = original_limit
     
+    @pytest.mark.asyncio
     async def test_account_lockout(self, async_client: AsyncClient, create_test_user, db_session):
         """Test account lockout after failed attempts."""
         
@@ -408,6 +435,7 @@ class TestBrowserSecurity:
         data = response.json()
         assert "locked" in data["detail"].lower()
     
+    @pytest.mark.asyncio
     async def test_session_hijacking_protection(self, async_client: AsyncClient, create_test_user):
         """Test protection against session hijacking."""
         

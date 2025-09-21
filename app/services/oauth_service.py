@@ -40,7 +40,7 @@ class OAuthService:
         allowed_scopes: List[str],
         description: Optional[str] = None,
         is_confidential: bool = True,
-        owner_user_id: Optional[int] = None,
+        user_id: Optional[int] = None,
     ) -> Tuple[OAuthClient, str]:
         """Create OAuth client and return client with secret."""
         
@@ -64,7 +64,7 @@ class OAuthService:
             allowed_scopes_list=allowed_scopes,
             grant_types_list=["authorization_code", "refresh_token"],
             is_confidential=is_confidential,
-            owner_user_id=owner_user_id,
+            user_id=user_id,
         )
         
         self.db.add(client)
@@ -197,7 +197,10 @@ class OAuthService:
                 raise ValidationError("PKCE required")
             
             if auth_code.code_challenge_method == "S256":
-                challenge = hashlib.sha256(code_verifier.encode()).hexdigest()
+                import base64
+                challenge = base64.urlsafe_b64encode(
+                    hashlib.sha256(code_verifier.encode()).digest()
+                ).decode('utf-8').rstrip('=')
             else:
                 challenge = code_verifier
             

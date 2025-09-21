@@ -4,8 +4,9 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config.settings import settings
 from app.models.session import Session
@@ -79,7 +80,7 @@ class SessionService:
         refresh_token_hash = hash_token(refresh_token)
         
         result = await self.db.execute(
-            select(Session).where(
+            select(Session).options(selectinload(Session.user)).where(
                 and_(
                     Session.refresh_token_hash == refresh_token_hash,
                     Session.is_active == True,
@@ -87,7 +88,23 @@ class SessionService:
                 )
             )
         )
-        return result.scalar_one_or_none()
+        session = result.scalar_one_or_none()
+        return session
+    
+    async def get_session_by_id(self, session_id: int, user_id: int) -> Optional[Session]:
+        """Get active session by id (primary key) and user_id."""
+        result = await self.db.execute(
+            select(Session).options(selectinload(Session.user)).where(
+                and_(
+                    Session.id == session_id,
+                    Session.user_id == user_id,
+                    Session.is_active == True,
+                    Session.is_revoked == False,
+                )
+            )
+        )
+        session = result.scalar_one_or_none()
+        return session
     
     async def validate_session(self, session: Session) -> bool:
         """Validate if session is still valid."""
@@ -255,3 +272,19 @@ class SessionService:
                 default=None,
             ),
         }
+    
+    async def revoke_session(self, session: Session) -> None:
+        """Revoke a session by marking it as inactive and revoked."""
+        session.is_active = False
+        session.is_revoked = True
+        await self.db.commit()
+    
+    async def revoke_all_user_sessions(self, user_id: int) -> int:
+        """Revoke all sessions for a user."""
+        result = await self.db.execute(
+            update(Session)
+            .where(Session.user_id == user_id)
+            .values(is_active=False, is_revoked=True)
+        )
+        await self.db.commit()
+        return result.rowcount

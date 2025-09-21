@@ -20,15 +20,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.start_time = time.time()
         
         # Add client IP to request state
-        if request.client:
+        # Try to get IP from headers first (for proxies)
+        forwarded_ip = (
+            request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or
+            request.headers.get("X-Real-IP", "")
+        )
+        
+        if forwarded_ip:
+            request.state.client_ip = forwarded_ip
+        elif request.client:
             request.state.client_ip = request.client.host
         else:
-            # Try to get IP from headers (for proxies)
-            request.state.client_ip = (
-                request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or
-                request.headers.get("X-Real-IP", "") or
-                "unknown"
-            )
+            request.state.client_ip = "unknown"
         
         # Add user agent to request state
         request.state.user_agent = request.headers.get("User-Agent", "")

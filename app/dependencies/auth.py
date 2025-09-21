@@ -89,13 +89,18 @@ async def get_current_user(
         try:
             # Session token is actually the refresh token for browsers
             session = await auth_service.session_service.get_session_by_refresh_token(session_token)
-            if session and await auth_service.session_service.validate_session(session):
-                # Update session activity
-                ip_address = request.client.host if request.client else None
-                await auth_service.session_service.update_session_activity(
-                    session, ip_address
-                )
-                return session.user
+            if session:
+                try:
+                    is_valid = await auth_service.session_service.validate_session(session)
+                    if is_valid:
+                        # Update session activity
+                        ip_address = getattr(request.state, "client_ip", None)
+                        await auth_service.session_service.update_session_activity(
+                            session, ip_address
+                        )
+                        return session.user
+                except Exception:
+                    pass
         except Exception:
             pass
     

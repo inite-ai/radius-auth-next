@@ -147,6 +147,7 @@ async def refresh_tokens(
 
 @router.post("/logout")
 async def logout(
+    request: Request,
     response: Response,
     refresh_token: Optional[str] = None,
     current_user: Optional[User] = Depends(get_optional_current_user),
@@ -155,16 +156,36 @@ async def logout(
     """Logout user by revoking session."""
     
     auth_service = AuthService(db)
+    from app.config.settings import settings
     
     # Try to get refresh token from cookie if not provided
     if not refresh_token:
-        # This would be implemented in the request processing
-        pass
+        refresh_token = request.cookies.get(settings.SESSION_COOKIE_NAME)
     
-    if refresh_token:
+    # If no refresh token and we have a current user from JWT, revoke their current session
+    if not refresh_token and current_user:
+        # Extract session_id from JWT access token
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            access_token = auth_header.split(" ")[1]
+            try:
+                from app.services.jwt_service import JWTService
+                jwt_service = JWTService()
+                payload = jwt_service.decode_access_token(access_token)
+                session_id = payload.get("session_id")
+                
+                if session_id:
+                    # Revoke session by session_id
+                    await auth_service.logout_session_by_id(session_id, current_user.id)
+            except Exception:
+                # If JWT decoding fails, ignore (token might be invalid anyway)
+                pass
+    elif refresh_token:
+        # Traditional logout with refresh token (for browser clients)
         await auth_service.logout(refresh_token)
     
-    # Clear cookies
+    # Clear cookies with correct names
+    response.delete_cookie(settings.SESSION_COOKIE_NAME)
     response.delete_cookie("access_token")
     response.delete_cookie("refresh_token")
     
@@ -310,8 +331,8 @@ async def mobile_login(
             "user": UserProfile.model_validate(user),
             "tokens": tokens,
             "device_info": {
-                "device_name": device_name,
-                "device_type": device_type,
+                "device_name": device_name or "Mobile Device",
+                "device_type": device_type or "mobile",
             },
         }
         

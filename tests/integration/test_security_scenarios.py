@@ -14,6 +14,7 @@ from httpx import AsyncClient
 class TestTokenRotationSecurity:
     """Test token rotation and refresh security."""
     
+    @pytest.mark.asyncio
     async def test_refresh_token_rotation(self, async_client: AsyncClient, create_test_user):
         """Test that refresh tokens are rotated on each use."""
         
@@ -59,6 +60,7 @@ class TestTokenRotationSecurity:
         
         assert refresh_response_2.status_code == 200
     
+    @pytest.mark.asyncio
     async def test_refresh_token_reuse_detection(self, async_client: AsyncClient, create_test_user):
         """Test refresh token reuse detection and session banning."""
         
@@ -98,6 +100,7 @@ class TestTokenRotationSecurity:
         
         assert profile_response.status_code == 401
     
+    @pytest.mark.asyncio
     async def test_access_token_short_expiry(self, async_client: AsyncClient, create_test_user, db_session):
         """Test access token short expiry enforcement."""
         
@@ -144,6 +147,7 @@ class TestPKCESecurity:
             "code_challenge_method": "S256"
         }
     
+    @pytest.mark.asyncio
     async def test_pkce_code_challenge_validation(self, async_client: AsyncClient, create_oauth_client, auth_headers):
         """Test PKCE code challenge validation."""
         
@@ -165,6 +169,7 @@ class TestPKCESecurity:
         
         assert response.status_code == 302  # Should redirect with code
     
+    @pytest.mark.asyncio
     async def test_pkce_verifier_mismatch(self, async_client: AsyncClient, create_oauth_client):
         """Test PKCE verifier mismatch detection."""
         
@@ -178,6 +183,7 @@ class TestPKCESecurity:
         # For now, we'll test the concept
         assert wrong_verifier != pkce_params["code_verifier"]
     
+    @pytest.mark.asyncio
     async def test_pkce_s256_method_enforcement(self, async_client: AsyncClient, create_oauth_client, auth_headers):
         """Test that S256 PKCE method is enforced."""
         
@@ -206,6 +212,7 @@ class TestPKCESecurity:
 class TestCSRFProtection:
     """Test CSRF protection mechanisms."""
     
+    @pytest.mark.asyncio
     async def test_csrf_token_validation(self, async_client: AsyncClient, create_test_user):
         """Test CSRF token validation for browser requests."""
         
@@ -225,6 +232,7 @@ class TestCSRFProtection:
         # Implementation depends on CSRF strategy
         assert login_response.status_code == 200
     
+    @pytest.mark.asyncio
     async def test_state_parameter_validation(self, async_client: AsyncClient, create_oauth_client, auth_headers):
         """Test OAuth state parameter validation."""
         
@@ -254,6 +262,7 @@ class TestCSRFProtection:
 class TestRateLimitingSecurity:
     """Test rate limiting security measures."""
     
+    @pytest.mark.asyncio
     async def test_login_rate_limiting(self, async_client: AsyncClient, create_test_user):
         """Test login attempt rate limiting."""
         
@@ -280,6 +289,7 @@ class TestRateLimitingSecurity:
         # Should eventually get rate limited
         assert rate_limited or failed_attempts >= 5
     
+    @pytest.mark.asyncio
     async def test_api_rate_limiting(self, async_client: AsyncClient, create_api_key):
         """Test API rate limiting for API keys."""
         
@@ -307,6 +317,7 @@ class TestRateLimitingSecurity:
 class TestSessionSecurity:
     """Test session security measures."""
     
+    @pytest.mark.asyncio
     async def test_session_hijacking_mitigation(self, async_client: AsyncClient, create_test_user):
         """Test session hijacking mitigation measures."""
         
@@ -339,6 +350,7 @@ class TestSessionSecurity:
         # But the change should be logged for monitoring
         assert profile_response.status_code == 200
     
+    @pytest.mark.asyncio
     async def test_user_agent_consistency(self, async_client: AsyncClient, create_test_user):
         """Test User-Agent consistency checking."""
         
@@ -367,6 +379,7 @@ class TestSessionSecurity:
         # Should work but might be flagged for monitoring
         assert profile_response.status_code == 200
     
+    @pytest.mark.asyncio
     async def test_concurrent_session_detection(self, async_client: AsyncClient, create_test_user):
         """Test detection of suspicious concurrent sessions."""
         
@@ -401,6 +414,7 @@ class TestSessionSecurity:
 class TestPasswordSecurity:
     """Test password-related security measures."""
     
+    @pytest.mark.asyncio
     async def test_password_brute_force_protection(self, async_client: AsyncClient, create_test_user):
         """Test protection against password brute force attacks."""
         
@@ -429,6 +443,7 @@ class TestPasswordSecurity:
         # Should eventually get locked out or rate limited
         assert locked_out or failed_attempts >= 5
     
+    @pytest.mark.asyncio
     async def test_password_reset_token_security(self, async_client: AsyncClient, create_test_user):
         """Test password reset token security."""
         
@@ -444,6 +459,7 @@ class TestPasswordSecurity:
         # Token validation would require email testing infrastructure
         # This test verifies the endpoint exists and responds appropriately
     
+    @pytest.mark.asyncio
     async def test_password_change_session_invalidation(self, async_client: AsyncClient, create_test_user):
         """Test that password change invalidates all sessions."""
         
@@ -489,6 +505,7 @@ class TestPasswordSecurity:
 class TestInputValidationSecurity:
     """Test input validation and sanitization."""
     
+    @pytest.mark.asyncio
     async def test_sql_injection_prevention(self, async_client: AsyncClient):
         """Test SQL injection prevention in login."""
         
@@ -506,6 +523,7 @@ class TestInputValidationSecurity:
         assert response.status_code == 401
         assert "SQL" not in response.json().get("detail", "")
     
+    @pytest.mark.asyncio
     async def test_xss_prevention_in_error_messages(self, async_client: AsyncClient):
         """Test XSS prevention in error messages."""
         
@@ -524,6 +542,7 @@ class TestInputValidationSecurity:
         detail = response.json().get("detail", "")
         assert "<script>" not in detail
     
+    @pytest.mark.asyncio
     async def test_email_validation(self, async_client: AsyncClient):
         """Test email format validation."""
         
@@ -548,6 +567,7 @@ class TestInputValidationSecurity:
             # Should return validation error or auth failure
             assert response.status_code in [400, 401, 422]
     
+    @pytest.mark.asyncio
     async def test_password_strength_validation(self, async_client: AsyncClient, auth_headers):
         """Test password strength validation."""
         
