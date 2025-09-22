@@ -15,15 +15,12 @@ from app.policies.base_policy import Action
 from app.schemas.organization import (
     MemberAddRequest,
     MemberListResponse,
-    MembershipResponse,
     OrganizationCreate,
     OrganizationDetailResponse,
     OrganizationListResponse,
     OrganizationUpdate,
     OrganizationUpdateResponse,
-    OrganizationWithRole,
 )
-from app.schemas.user import UserResponse
 from app.services.organization_service import OrganizationService
 from app.utils.exceptions import NotFoundError, ValidationError
 from app.utils.response_builders import ResponseBuilder
@@ -39,20 +36,11 @@ async def get_organizations(
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
 ):
     """Get organizations user has access to."""
-    org_memberships, total = await org_service.get_user_organizations(
+    organizations_with_roles, total = await org_service.get_user_organizations_with_roles(
         user_id=current_user.id,
         page=page,
         per_page=per_page,
     )
-
-    organizations_with_roles = [
-        OrganizationWithRole(
-            organization=org,
-            role=membership.role,
-            joined_at=membership.created_at,
-        )
-        for org, membership in org_memberships
-    ]
 
     return ResponseBuilder.organization_list(organizations_with_roles, total)
 
@@ -123,19 +111,9 @@ async def update_organization(
 
     try:
         update_data = org_update.dict(exclude_unset=True)
-        organization = await org_service.update_organization(
+        return await org_service.update_organization_with_response(
             organization_id=organization_id,
             **update_data,
-        )
-
-        return OrganizationUpdateResponse(
-            success=True,
-            message="Organization updated successfully",
-            organization={
-                "id": organization.id,
-                "name": organization.name,
-                "updated_at": organization.updated_at,
-            },
         )
     except NotFoundError:
         raise HTTPException(
@@ -155,25 +133,11 @@ async def get_organization_members(
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
 ):
     """Get organization members."""
-    user_memberships, total = await org_service.get_organization_members(
+    members, total = await org_service.get_organization_members_with_responses(
         organization_id=organization_id,
         page=page,
         per_page=per_page,
     )
-
-    members = [
-        MembershipResponse(
-            id=membership.id,
-            user_id=user.id,
-            organization_id=membership.organization_id,
-            role=membership.role,
-            is_active=membership.is_active,
-            user=UserResponse.model_validate(user),
-            created_at=membership.created_at,
-            updated_at=membership.updated_at,
-        )
-        for user, membership in user_memberships
-    ]
 
     return MemberListResponse(
         success=True,

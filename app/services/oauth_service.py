@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.oauth_client import OAuthAccessToken, OAuthAuthorizationCode, OAuthClient
 from app.models.user import User
+from app.schemas.oauth import OAuthClientResponse, OAuthUserInfoResponse
 from app.utils.exceptions import AuthenticationError, ValidationError
 from app.utils.security import constant_time_compare, generate_random_string, hash_token
 
@@ -393,3 +394,119 @@ class OAuthService:
         import json
 
         return json.dumps(scopes)
+
+    def _create_client_response(self, client: OAuthClient) -> OAuthClientResponse:
+        """Create OAuthClientResponse from OAuthClient model."""
+        return OAuthClientResponse(
+            client_id=client.client_id,
+            name=client.name,
+            description=client.description,
+            redirect_uris=client.redirect_uris_list,
+            allowed_scopes=client.allowed_scopes_list,
+            is_confidential=client.is_confidential,
+            created_at=client.created_at,
+        )
+
+    async def get_user_clients_list(self, user_id: int) -> list[OAuthClientResponse]:
+        """Get list of user's OAuth clients as response objects."""
+        clients = await self.list_user_clients(user_id)
+        return [self._create_client_response(client) for client in clients]
+
+    async def create_user_info_response(
+        self,
+        token: OAuthAccessToken,
+        user: User,
+    ) -> OAuthUserInfoResponse:
+        """Create OAuth user info response based on token scopes."""
+        user_info = await self.get_user_permissions(token, user)
+
+        # Map to OAuth standard userinfo format plus extra fields for compatibility
+        return OAuthUserInfoResponse(
+            sub=str(user.id),  # subject (user ID) - OAuth standard
+            id=str(user.id),  # user ID for compatibility
+            email=user_info.get("email"),
+            name=user_info.get("full_name"),
+            given_name=user_info.get("first_name"),
+            family_name=user_info.get("last_name"),
+            picture=user_info.get("avatar_url"),
+            email_verified=user_info.get("email_verified"),
+            # Legacy compatibility fields
+            first_name=user_info.get("first_name"),
+            last_name=user_info.get("last_name"),
+            username=user_info.get("username"),
+        )
+
+    def generate_consent_html(
+        self,
+        client: OAuthClient,
+        user: User,
+        requested_scopes: list[str],
+        client_id: str,
+        redirect_uri: str,
+        scope: str,
+        state: str | None,
+        code_challenge: str | None,
+        code_challenge_method: str,
+    ) -> str:
+        """Generate OAuth consent screen HTML."""
+        scope_descriptions = "".join(
+            f'<div class="scope">• {scope_name}: {self.AVAILABLE_SCOPES.get(scope_name, "Unknown permission")}</div>'
+            for scope_name in requested_scopes
+        )
+
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Authorize {client.name}</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; }}
+                .app-info {{ background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+                .scopes {{ margin: 20px 0; }}
+                .scope {{ margin: 5px 0; padding: 5px; background: #e7f3ff; border-radius: 3px; }}
+                .buttons {{ margin: 20px 0; }}
+                button {{ padding: 10px 20px; margin: 5px; border: none; border-radius: 3px; cursor: pointer; }}
+                .allow {{ background: #007bff; color: white; }}
+                .deny {{ background: #6c757d; color: white; }}
+            </style>
+        </head>
+        <body>
+            <h2>Authorize Application</h2>
+
+            <div class="app-info">
+                <h3>{client.name}</h3>
+                <p>{client.description or "No description provided"}</p>
+            </div>
+
+            <p><strong>{client.name}</strong> is requesting access to your account.</p>
+
+            <div class="scopes">
+                <h4>Requested permissions:</h4>
+                {scope_descriptions}
+            </div>
+
+            <div class="buttons">
+                <form method="post" action="/api/v1/oauth/authorize" style="display: inline;">
+                    <input type="hidden" name="client_id" value="{client_id}">
+                    <input type="hidden" name="redirect_uri" value="{redirect_uri}">
+                    <input type="hidden" name="scope" value="{scope}">
+                    <input type="hidden" name="state" value="{state or ''}">
+                    <input type="hidden" name="code_challenge" value="{code_challenge or ''}">
+                    <input type="hidden" name="code_challenge_method" value="{code_challenge_method}">
+                    <input type="hidden" name="action" value="allow">
+                    <button type="submit" class="allow">Allow</button>
+                </form>
+
+                <form method="post" action="/api/v1/oauth/authorize" style="display: inline;">
+                    <input type="hidden" name="client_id" value="{client_id}">
+                    <input type="hidden" name="redirect_uri" value="{redirect_uri}">
+                    <input type="hidden" name="state" value="{state or ''}">
+                    <input type="hidden" name="action" value="deny">
+                    <button type="submit" class="deny">Deny</button>
+                </form>
+            </div>
+
+            <p><small>You are logged in as {user.email}</small></p>
+        </body>
+        </html>
+        """

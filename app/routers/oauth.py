@@ -73,22 +73,7 @@ async def list_oauth_clients(
     oauth_service: OAuthService = Depends(get_oauth_service),
 ):
     """List user's OAuth clients."""
-    clients = await oauth_service.list_user_clients(current_user.id)
-
-    from app.schemas.oauth import OAuthClientResponse
-
-    client_responses = [
-        OAuthClientResponse(
-            client_id=client.client_id,
-            name=client.name,
-            description=client.description,
-            redirect_uris=client.redirect_uris_list,
-            allowed_scopes=client.allowed_scopes_list,
-            is_confidential=client.is_confidential,
-            created_at=client.created_at,
-        )
-        for client in clients
-    ]
+    client_responses = await oauth_service.get_user_clients_list(current_user.id)
 
     return OAuthClientListResponse(
         success=True,
@@ -173,63 +158,18 @@ async def authorize(
         login_url = "/api/v1/auth/login?next=/oauth/authorize"
         return RedirectResponse(url=login_url, status_code=302)
 
-    # Show consent screen (simplified HTML for demo)
-    consent_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Authorize {client.name}</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; }}
-            .app-info {{ background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }}
-            .scopes {{ margin: 20px 0; }}
-            .scope {{ margin: 5px 0; padding: 5px; background: #e7f3ff; border-radius: 3px; }}
-            .buttons {{ margin: 20px 0; }}
-            button {{ padding: 10px 20px; margin: 5px; border: none; border-radius: 3px; cursor: pointer; }}
-            .allow {{ background: #007bff; color: white; }}
-            .deny {{ background: #6c757d; color: white; }}
-        </style>
-    </head>
-    <body>
-        <h2>Authorize Application</h2>
-
-        <div class="app-info">
-            <h3>{client.name}</h3>
-            <p>{client.description or "No description provided"}</p>
-        </div>
-
-        <p><strong>{client.name}</strong> is requesting access to your account.</p>
-
-        <div class="scopes">
-            <h4>Requested permissions:</h4>
-            {"".join(f'<div class="scope">• {scope}: {oauth_service.AVAILABLE_SCOPES.get(scope, "Unknown permission")}</div>' for scope in requested_scopes)}
-        </div>
-
-        <div class="buttons">
-            <form method="post" action="/api/v1/oauth/authorize" style="display: inline;">
-                <input type="hidden" name="client_id" value="{client_id}">
-                <input type="hidden" name="redirect_uri" value="{redirect_uri}">
-                <input type="hidden" name="scope" value="{scope}">
-                <input type="hidden" name="state" value="{state or ''}">
-                <input type="hidden" name="code_challenge" value="{code_challenge or ''}">
-                <input type="hidden" name="code_challenge_method" value="{code_challenge_method}">
-                <input type="hidden" name="action" value="allow">
-                <button type="submit" class="allow">Allow</button>
-            </form>
-
-            <form method="post" action="/api/v1/oauth/authorize" style="display: inline;">
-                <input type="hidden" name="client_id" value="{client_id}">
-                <input type="hidden" name="redirect_uri" value="{redirect_uri}">
-                <input type="hidden" name="state" value="{state or ''}">
-                <input type="hidden" name="action" value="deny">
-                <button type="submit" class="deny">Deny</button>
-            </form>
-        </div>
-
-        <p><small>You are logged in as {current_user.email}</small></p>
-    </body>
-    </html>
-    """
+    # Generate consent screen using service
+    consent_html = oauth_service.generate_consent_html(
+        client=client,
+        user=current_user,
+        requested_scopes=requested_scopes,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        scope=scope,
+        state=state,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+    )
 
     return HTMLResponse(content=consent_html)
 
@@ -383,26 +323,8 @@ async def userinfo(
 
     token, user = token_user
 
-    # Return user info based on scopes
-    user_info = await oauth_service.get_user_permissions(token, user)
-
-    # Map to OAuth standard userinfo format plus extra fields for compatibility
-    oauth_user_info = OAuthUserInfoResponse(
-        sub=str(user.id),  # subject (user ID) - OAuth standard
-        id=str(user.id),  # user ID for compatibility
-        email=user_info.get("email"),
-        name=user_info.get("full_name"),
-        given_name=user_info.get("first_name"),
-        family_name=user_info.get("last_name"),
-        picture=user_info.get("avatar_url"),
-        email_verified=user_info.get("email_verified"),
-        # Legacy compatibility fields
-        first_name=user_info.get("first_name"),
-        last_name=user_info.get("last_name"),
-        username=user_info.get("username"),
-    )
-
-    return oauth_user_info
+    # Create user info response using service
+    return await oauth_service.create_user_info_response(token, user)
 
 
 @router.post("/revoke")

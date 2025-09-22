@@ -7,6 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.membership import Membership, Role
 from app.models.organization import Organization
 from app.models.user import User
+from app.schemas.organization import (
+    MembershipResponse,
+    OrganizationUpdateResponse,
+    OrganizationWithRole,
+)
+from app.schemas.user import UserResponse
 from app.utils.exceptions import NotFoundError, ValidationError
 
 
@@ -317,3 +323,77 @@ class OrganizationService:
             "member_count": member_count,
             "role_distribution": role_counts,
         }
+
+    async def get_user_organizations_with_roles(
+        self,
+        user_id: int,
+        page: int = 1,
+        per_page: int = 20,
+    ) -> tuple[list[OrganizationWithRole], int]:
+        """Get user organizations as response objects with roles."""
+        org_memberships, total = await self.get_user_organizations(
+            user_id=user_id,
+            page=page,
+            per_page=per_page,
+        )
+
+        organizations_with_roles = [
+            OrganizationWithRole(
+                organization=org,
+                role=membership.role,
+                joined_at=membership.created_at,
+            )
+            for org, membership in org_memberships
+        ]
+
+        return organizations_with_roles, total
+
+    async def get_organization_members_with_responses(
+        self,
+        organization_id: int,
+        page: int = 1,
+        per_page: int = 20,
+    ) -> tuple[list[MembershipResponse], int]:
+        """Get organization members as response objects."""
+        user_memberships, total = await self.get_organization_members(
+            organization_id=organization_id,
+            page=page,
+            per_page=per_page,
+        )
+
+        members = [
+            MembershipResponse(
+                id=membership.id,
+                user_id=user.id,
+                organization_id=membership.organization_id,
+                role=membership.role,
+                is_active=membership.is_active,
+                user=UserResponse.model_validate(user),
+                created_at=membership.created_at,
+                updated_at=membership.updated_at,
+            )
+            for user, membership in user_memberships
+        ]
+
+        return members, total
+
+    async def update_organization_with_response(
+        self,
+        organization_id: int,
+        **update_data,
+    ) -> OrganizationUpdateResponse:
+        """Update organization and return response object."""
+        organization = await self.update_organization(
+            organization_id=organization_id,
+            **update_data,
+        )
+
+        return OrganizationUpdateResponse(
+            success=True,
+            message="Organization updated successfully",
+            organization={
+                "id": organization.id,
+                "name": organization.name,
+                "updated_at": organization.updated_at,
+            },
+        )

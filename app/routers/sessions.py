@@ -4,13 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.constants.status_codes import APIStatus
 from app.decorators.permissions import require_delete_permission, require_read_permission
-from app.dependencies.auth import get_current_active_user
+from app.dependencies.auth import get_current_active_user, get_current_session
 from app.dependencies.services import get_session_service
+from app.models.session import Session
 from app.models.user import User
 from app.schemas.session import (
     RevokeOtherSessionsRequest,
     SessionListResponse,
-    SessionResponse,
     SessionStats,
     SessionStatsResponse,
 )
@@ -24,34 +24,18 @@ router = APIRouter()
 @require_read_permission("session")
 async def get_user_sessions(
     current_user: User = Depends(get_current_active_user),
+    current_session: Session | None = Depends(get_current_session),
     session_service: SessionService = Depends(get_session_service),
     include_revoked: bool = Query(False, description="Include revoked sessions"),
 ):
     """Get current user's sessions."""
-    sessions = await session_service.get_user_sessions(
+    current_session_id = current_session.session_id if current_session else None
+
+    session_responses = await session_service.get_user_sessions_with_responses(
         user_id=current_user.id,
+        current_session_id=current_session_id,
         include_revoked=include_revoked,
     )
-
-    # TODO: Detect current session by comparing with request session
-    session_responses = []
-    for session in sessions:
-        session_response = SessionResponse(
-            id=session.id,
-            session_id=session.session_id,
-            device_name=session.device_name,
-            device_type=session.device_type,
-            user_agent=session.user_agent,
-            ip_address=session.ip_address,
-            is_current=False,  # TODO: implement current session detection
-            is_active=session.is_active,
-            is_revoked=session.is_revoked,
-            is_remember_me=session.is_remember_me,
-            created_at=session.created_at,
-            last_seen_at=session.last_seen_at,
-            expires_at=session.expires_at,
-        )
-        session_responses.append(session_response)
 
     return SessionListResponse(
         success=True,

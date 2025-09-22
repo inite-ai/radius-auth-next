@@ -9,6 +9,7 @@ from app.config.settings import settings
 from app.models.api_key import APIKey
 from app.models.membership import Membership
 from app.models.user import User
+from app.schemas.auth import APIKeyResponse, LoginResponse, TokenResponse, UserProfile
 from app.utils.exceptions import (
     AccountLockedError,
     AuthenticationError,
@@ -454,3 +455,69 @@ class AuthService:
             )
         )
         return result.scalar_one_or_none()
+
+    def _create_user_profile(self, user: User) -> UserProfile:
+        """Create UserProfile from User model."""
+        return UserProfile(
+            id=user.id,
+            email=user.email,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            full_name=user.full_name,
+            is_verified=user.is_verified,
+            is_superuser=user.is_superuser,
+            created_at=user.created_at,
+            last_login_at=user.last_login_at,
+        )
+
+    def _create_api_key_response(self, api_key: APIKey) -> APIKeyResponse:
+        """Create APIKeyResponse from APIKey model."""
+        return APIKeyResponse(
+            id=api_key.id,
+            name=api_key.name,
+            prefix=api_key.prefix,
+            scopes=api_key.scopes_list,
+            is_valid=api_key.is_valid,
+            last_used_at=api_key.last_used_at,
+            usage_count=api_key.usage_count,
+            expires_at=api_key.expires_at,
+            created_at=api_key.created_at,
+        )
+
+    async def create_login_response(
+        self,
+        user: User,
+        tokens: dict[str, str] | None,
+        device_info: dict[str, str],
+        client_type: str,
+    ) -> LoginResponse:
+        """Create complete login response."""
+        user_profile = self._create_user_profile(user)
+
+        response_tokens = TokenResponse(**tokens) if tokens else None
+
+        return LoginResponse(
+            success=True,
+            message=f"Login successful ({client_type} client)",
+            user=user_profile,
+            tokens=response_tokens,
+            device_info=device_info,
+        )
+
+    async def get_api_keys_list(self, user_id: int) -> list[APIKeyResponse]:
+        """Get list of API keys as response objects."""
+        api_keys = await self.list_api_keys(user_id)
+        return [self._create_api_key_response(key) for key in api_keys]
+
+    async def logout_by_access_token(self, access_token: str, user_id: int) -> bool:
+        """Logout by extracting session ID from access token."""
+        try:
+            payload = self.jwt_service.decode_access_token(access_token)
+            session_id = payload.get("session_id")
+
+            if session_id:
+                await self.logout_session_by_id(session_id, user_id)
+                return True
+        except Exception:
+            pass
+        return False

@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.config.settings import settings
 from app.models.session import Session
 from app.models.user import User
+from app.schemas.session import SessionResponse
 from app.utils.security import generate_session_id, hash_token
 
 
@@ -276,3 +277,37 @@ class SessionService:
         )
         await self.db.commit()
         return result.rowcount
+
+    def _session_to_response(
+        self, session: Session, current_session_id: str | None = None
+    ) -> SessionResponse:
+        """Convert Session model to SessionResponse schema."""
+        return SessionResponse(
+            id=session.id,
+            session_id=session.session_id,
+            device_name=session.device_name,
+            device_type=session.device_type,
+            user_agent=session.user_agent,
+            ip_address=session.ip_address,
+            is_current=current_session_id == session.session_id if current_session_id else False,
+            is_active=session.is_active,
+            is_revoked=session.is_revoked,
+            is_remember_me=session.is_remember_me,
+            created_at=session.created_at,
+            last_seen_at=session.last_seen_at,
+            expires_at=session.expires_at,
+        )
+
+    async def get_user_sessions_with_responses(
+        self,
+        user_id: int,
+        current_session_id: str | None = None,
+        include_revoked: bool = False,
+    ) -> list[SessionResponse]:
+        """Get all sessions for a user as response objects."""
+        sessions = await self.get_user_sessions(
+            user_id=user_id,
+            include_revoked=include_revoked,
+        )
+
+        return [self._session_to_response(session, current_session_id) for session in sessions]

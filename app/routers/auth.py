@@ -18,13 +18,12 @@ from app.schemas.auth import (
     RefreshTokenRequest,
     RefreshTokenResponse,
     TokenResponse,
-    UserProfile,
     VerifyTokenResponse,
 )
 from app.schemas.common import BaseResponse
 from app.schemas.user import UserCreate, UserDetailResponse, UserResponse
 from app.services.auth_service import AuthService
-from app.utils.device_detection import detect_client_type, get_device_info, should_use_cookies
+from app.services.client_service import ClientService
 from app.utils.exceptions import AuthenticationError
 
 router = APIRouter()
@@ -73,10 +72,8 @@ async def login(
     """
 
     try:
-        # Detect client type
-        user_agent = request.headers.get("User-Agent")
-        client_type = detect_client_type(user_agent, request.headers.get("Accept"))
-        device_name, device_type = get_device_info(user_agent)
+        # Detect client type and device info
+        client_type, device_name, device_type = ClientService.detect_client_info(request)
 
         # Authenticate user
         user = await auth_service.authenticate_user(
@@ -87,53 +84,34 @@ async def login(
         # Create session and tokens based on client type
         tokens = await auth_service.create_user_session(
             user=user,
-            user_agent=user_agent,
+            user_agent=request.headers.get("User-Agent"),
             ip_address=getattr(request.state, "client_ip", None),
             device_name=device_name,
             device_type=client_type,
             is_remember_me=login_data.remember_me,
         )
 
-        # For browser clients: set secure httpOnly cookies
-        if should_use_cookies(client_type):
-            from app.config.settings import settings
+        # Set cookies for browser clients
+        ClientService.set_session_cookies(
+            response=response,
+            refresh_token=tokens["refresh_token"],
+            client_type=client_type,
+            remember_me=login_data.remember_me,
+        )
 
-            # Set session cookie (NOT the JWT access token)
-            response.set_cookie(
-                key=settings.SESSION_COOKIE_NAME,
-                value=tokens["refresh_token"],  # Use refresh token as session identifier
-                max_age=86400 * (30 if login_data.remember_me else 1),
-                httponly=settings.SESSION_COOKIE_HTTPONLY,
-                secure=settings.SESSION_COOKIE_SECURE,
-                samesite=settings.SESSION_COOKIE_SAMESITE,
-            )
+        # Determine if tokens should be returned in response
+        response_tokens = tokens if ClientService.should_return_tokens(client_type) else None
 
-            # Don't include tokens in response body for browsers
-            response_tokens = None
-        else:
-            # For mobile/API clients: return tokens in response body
-            response_tokens = TokenResponse(**tokens)
-
-        return LoginResponse(
-            success=True,
-            message=f"Login successful ({client_type} client)",
-            user=UserProfile(
-                id=user.id,
-                email=user.email,
-                first_name=user.first_name,
-                last_name=user.last_name,
-                full_name=user.full_name,
-                is_verified=user.is_verified,
-                is_superuser=user.is_superuser,
-                created_at=user.created_at,
-                last_login_at=user.last_login_at,
-            ),
+        # Create complete login response
+        return await auth_service.create_login_response(
+            user=user,
             tokens=response_tokens,
             device_info={
                 "device_name": device_name,
                 "device_type": device_type,
-                "user_agent": user_agent,
+                "user_agent": request.headers.get("User-Agent"),
             },
+            client_type=client_type,
         )
 
     except AuthenticationError as e:
@@ -194,33 +172,18 @@ async def logout(
     if not refresh_token:
         refresh_token = request.cookies.get(settings.SESSION_COOKIE_NAME)
 
-    # If no refresh token and we have a current user from JWT, revoke their current session
+    # If no refresh token and we have a current user from JWT, try logout by access token
     if not refresh_token and current_user:
-        # Extract session_id from JWT access token
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             access_token = auth_header.split(" ")[1]
-            try:
-                from app.services.jwt_service import JWTService
-
-                jwt_service = JWTService()
-                payload = jwt_service.decode_access_token(access_token)
-                session_id = payload.get("session_id")
-
-                if session_id:
-                    # Revoke session by session_id
-                    await auth_service.logout_session_by_id(session_id, current_user.id)
-            except Exception:
-                # If JWT decoding fails, ignore (token might be invalid anyway)
-                pass
+            await auth_service.logout_by_access_token(access_token, current_user.id)
     elif refresh_token:
         # Traditional logout with refresh token (for browser clients)
         await auth_service.logout(refresh_token)
 
-    # Clear cookies with correct names
-    response.delete_cookie(settings.SESSION_COOKIE_NAME)
-    response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
+    # Clear cookies
+    ClientService.clear_session_cookies(response)
 
     return LogoutResponse(
         success=True,
@@ -327,8 +290,6 @@ async def create_api_key(
     API keys have format: pauth_xxx... and are stored as hashes.
     """
 
-    from app.schemas.auth import APIKeyResponse
-
     # Use auth service to create the API key
     api_key, api_key_record = await auth_service.create_api_key(
         user_id=current_user.id,
@@ -337,17 +298,7 @@ async def create_api_key(
         expires_days=request.expires_days,
     )
 
-    key_info = APIKeyResponse(
-        id=api_key_record.id,
-        name=api_key_record.name,
-        prefix=api_key_record.prefix,
-        scopes=api_key_record.scopes_list,
-        is_valid=api_key_record.is_valid,
-        last_used_at=api_key_record.last_used_at,
-        usage_count=api_key_record.usage_count,
-        expires_at=api_key_record.expires_at,
-        created_at=api_key_record.created_at,
-    )
+    key_info = auth_service._create_api_key_response(api_key_record)
 
     return APIKeyCreateResponse(
         success=True,
@@ -364,24 +315,7 @@ async def list_api_keys(
     auth_service: AuthService = Depends(get_auth_service),
 ):
     """List user's API keys (without the actual keys)."""
-    api_keys = await auth_service.list_api_keys(current_user.id)
-
-    from app.schemas.auth import APIKeyResponse
-
-    api_key_responses = [
-        APIKeyResponse(
-            id=key.id,
-            name=key.name,
-            prefix=key.prefix,
-            scopes=key.scopes_list,
-            is_valid=key.is_valid,
-            last_used_at=key.last_used_at,
-            usage_count=key.usage_count,
-            expires_at=key.expires_at,
-            created_at=key.created_at,
-        )
-        for key in api_keys
-    ]
+    api_key_responses = await auth_service.get_api_keys_list(current_user.id)
 
     return APIKeyListResponse(
         success=True,

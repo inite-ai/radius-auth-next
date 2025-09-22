@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.membership import Membership
 from app.models.organization import Organization
+from app.models.session import Session
 from app.models.user import User
 from app.services.auth_service import AuthService
 from app.utils.exceptions import InvalidTokenError
@@ -143,6 +144,45 @@ async def get_optional_current_user(
 ) -> User | None:
     """Get current user if authenticated, otherwise None."""
     return current_user
+
+
+async def get_current_session(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    db: AsyncSession = Depends(get_db),
+) -> Session | None:
+    """Get current session from request."""
+    from app.config.settings import settings
+
+    auth_service = AuthService(db)
+
+    # Try JWT token first
+    if credentials:
+        try:
+            payload = await auth_service.verify_access_token(credentials.credentials)
+            if "session_id" in payload:
+                session_result = await db.execute(
+                    select(Session).where(
+                        Session.id == payload["session_id"],
+                        Session.is_active == True,
+                        Session.is_revoked == False,
+                    )
+                )
+                return session_result.scalar_one_or_none()
+        except Exception:
+            pass
+
+    # Try session cookie
+    session_token = request.cookies.get(settings.SESSION_COOKIE_NAME)
+    if session_token:
+        try:
+            session = await auth_service.session_service.get_session_by_refresh_token(session_token)
+            if session and session.is_valid:
+                return session
+        except Exception:
+            pass
+
+    return None
 
 
 async def get_current_organization(
